@@ -287,23 +287,59 @@ def load_data_from_drive():
     Load Master and Log data with UI feedback.
     Applies st.empty() to clear status after loading.
     """
+    # === デバッグエリア ===
+    debug_area = st.expander("🔧 [DEBUG] Drive読み込み診断", expanded=True)
+    with debug_area:
+        st.write(f"ℹ️ **ファイルID一覧:**")
+        st.write(f"- Master: `{MASTER_FILE_ID}`")
+        st.write(f"- Log: `{LOG_FILE_ID}`")
+        st.write(f"- MIME(Master): `{MASTER_FILE_MIME}`")
+        st.write(f"- MIME(Log): `{LOG_FILE_MIME}`")
+        st.write(f"- _is_cloud(): `{_is_cloud()}`")
+
     status_area = st.empty()
     status_area.info("🔵 Connecting to Google Drive...")
     print("[load_data] Step 1: Authenticating...")
     
-    service = authenticate()
-    if not service:
-        status_area.error("Authentication Failed.")
-        print("[load_data] FAIL: Authentication failed")
+    try:
+        service = authenticate()
+    except Exception as e:
+        with debug_area:
+            st.error(f"❌ **認証例外:** {type(e).__name__}: {e}")
         return None, None, [], None
+
+    if not service:
+        with debug_area:
+            st.error("❌ **認証失敗:** authenticate() が None を返しました")
+        status_area.error("Authentication Failed.")
+        return None, None, [], None
+    
+    with debug_area:
+        st.success("✅ **認証成功**")
     print("[load_data] Step 1: OK")
         
     status_area.info("🔵 Downloading files...")
     print("[load_data] Step 2: Downloading by direct file ID...")
 
     # ファイルID直接指定でダウンロード（検索不要）
-    master_stream = download_content(service, MASTER_FILE_ID, MASTER_FILE_MIME)
-    log_stream = download_content(service, LOG_FILE_ID, LOG_FILE_MIME)
+    try:
+        master_stream = download_content(service, MASTER_FILE_ID, MASTER_FILE_MIME)
+    except Exception as e:
+        master_stream = None
+        with debug_area:
+            st.error(f"❌ **Masterダウンロード例外:** {type(e).__name__}: {e}")
+
+    try:
+        log_stream = download_content(service, LOG_FILE_ID, LOG_FILE_MIME)
+    except Exception as e:
+        log_stream = None
+        with debug_area:
+            st.error(f"❌ **Logダウンロード例外:** {type(e).__name__}: {e}")
+
+    with debug_area:
+        st.write(f"⬇️ **ダウンロード結果:**")
+        st.write(f"- master_stream: `{type(master_stream).__name__}` ({'OK - ' + str(master_stream.getbuffer().nbytes) + ' bytes' if master_stream else 'None'})")
+        st.write(f"- log_stream: `{type(log_stream).__name__}` ({'OK - ' + str(log_stream.getbuffer().nbytes) + ' bytes' if log_stream else 'None'})")
     
     if not master_stream:
         print("[load_data] FAIL: master_stream is None")
@@ -317,8 +353,12 @@ def load_data_from_drive():
     if master_stream:
         try:
             master_df = pd.read_excel(master_stream, sheet_name="商品マスタ")
+            with debug_area:
+                st.write(f"📊 **Master パース結果:** {len(master_df)} 行, カラム: {list(master_df.columns[:5])}...")
             print(f"[load_data] Step 5: Master parsed OK ({len(master_df)} rows)")
         except Exception as e:
+            with debug_area:
+                st.error(f"❌ **Master パース例外:** {type(e).__name__}: {e}")
             print(f"[load_data] FAIL: pd.read_excel error: {e}")
             master_df = None
     
@@ -332,8 +372,12 @@ def load_data_from_drive():
             excel_bytes = master_stream.read()
             xls = pd.ExcelFile(io.BytesIO(excel_bytes))
             event_sheet_names = [s for s in xls.sheet_names if s not in EXCLUDE_SHEETS]
+            with debug_area:
+                st.write(f"📋 **イベントシート一覧:** {event_sheet_names}")
             print(f"[load_data] Event sheets: {event_sheet_names}")
         except Exception as e:
+            with debug_area:
+                st.error(f"❌ **シート名取得例外:** {type(e).__name__}: {e}")
             print(f"[load_data] WARNING: Could not read sheet names: {e}")
     
     # Parse Log (CSV)
@@ -341,10 +385,18 @@ def load_data_from_drive():
     if log_stream:
         try:
             log_df = pd.read_csv(log_stream)
+            with debug_area:
+                st.write(f"📋 **Log パース結果:** {len(log_df)} 行")
             print(f"[load_data] Step 6: Log parsed OK ({len(log_df)} rows)")
         except Exception as e:
+            with debug_area:
+                st.error(f"❌ **Log パース例外:** {type(e).__name__}: {e}")
             print(f"[load_data] FAIL: pd.read_csv error: {e}")
             log_df = None
+    
+    # 最終結果サマリー
+    with debug_area:
+        st.write(f"🏁 **最終結果:** master_df={'OK' if master_df is not None else 'None'}, log_df={'OK' if log_df is not None else 'None'}, sheets={len(event_sheet_names)}, excel_bytes={'OK' if excel_bytes else 'None'}")
     
     # Clear Status
     status_area.empty()
