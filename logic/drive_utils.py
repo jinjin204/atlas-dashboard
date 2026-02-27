@@ -286,7 +286,7 @@ def load_data_from_drive():
     if not service:
         status_area.error("Authentication Failed.")
         print("[load_data] FAIL: Authentication failed")
-        return None, None
+        return None, None, [], None
     print("[load_data] Step 1: OK")
         
     status_area.info("🔵 Searching files...")
@@ -297,7 +297,7 @@ def load_data_from_drive():
     if not master_file or not log_file:
         status_area.warning("Files not found in Drive.")
         print(f"[load_data] FAIL: master_file={master_file}, log_file={log_file}")
-        return None, None
+        return None, None, [], None
     print(f"[load_data] Step 2: OK - master={master_file['name']}, log={log_file['name']}")
         
     status_area.info(f"⬇️ Downloading: {master_file['name']}...")
