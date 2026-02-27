@@ -1,0 +1,32 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Credentials (NEVER push to GitHub)
+token.json
+credentials.json
+
+# Local data
+data/
+test_data_temp/
+test_data_deadline/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Temporary verification scripts
+verify_*.py
+temp_*.py
+check_env.py
+create_dummy_excel.py
+debug_sheet_list.py

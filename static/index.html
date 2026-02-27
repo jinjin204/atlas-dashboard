@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Strategic Mind & Pipeline v6.5 (Append Feature)</title>
+    <!-- GUARDRAIL UI: Error Cleanup -->
+    <style>
+        #error-console {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ff5555;
+            z-index: 99999;
+            padding: 20px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            pointer-events: none;
+            /* Allow clicks through if possible, but mainly for display */
+        }
+
+        /* INJECTED CSS WILL GO HERE */
+    </style>
+    <script>
+        // GUARDRAIL UI: Global Error Handler (Fixed)
+        window.onerror = function (message, source, lineno, colno, error) {
+            var errConsole = document.getElementById('error-console');
+            if (errConsole) {
+                errConsole.style.display = 'block';
+                errConsole.innerHTML += `[JS Error] ${message}\n  at ${source}:${lineno}:${colno}\n\n`;
+                if (error && error.stack) {
+                    errConsole.innerHTML += `Stack trace:\n${error.stack}\n\n`;
+                }
+            }
+        };
+
+        // GUARDRAIL: Data Health Check (runs after PM.init)
+        window.addEventListener('load', function () {
+            try {
+                if (typeof PM === 'undefined') {
+                    throw new Error('PM object not defined - logic.js failed to load');
+                }
+                if (!Array.isArray(PM.productionEvents)) {
+                    throw new Error('PM.productionEvents is not an array: ' + typeof PM.productionEvents);
+                }
+                // Validate each event has required fields
+                var badEvents = [];
+                PM.productionEvents.forEach(function (evt, idx) {
+                    if (!evt.start || !evt.title || !evt.extendedProps) {
+                        badEvents.push(idx);
+                    }
+                });
+                if (badEvents.length > 0) {
+                    console.warn('[Guardrail] ' + badEvents.length + ' events have missing fields (indices: ' + badEvents.join(',') + '). Filtering them out.');
+                    PM.productionEvents = PM.productionEvents.filter(function (evt) {
+                        return evt.start && evt.title && evt.extendedProps;
+                    });
+                }
+                console.log('[Guardrail] Data OK: ' + PM.productionEvents.length + ' production events loaded.');
+            } catch (e) {
+                var errConsole = document.getElementById('error-console');
+                if (errConsole) {
+                    errConsole.style.display = 'block';
+                    errConsole.innerHTML += '[Data Guardrail Error] ' + e.message + '\n\n';
+                }
+            }
+        });
+    </script>
+
+</head>
+
+<body>
+    <div id="error-console"></div>
+    <div id="main-container">
+        <div id="view-goals" class="view-layer">
+            <div id="vision-canvas" class="canvas vision-bg">
+                <svg id="vision-svg-layer"
+                    style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></svg>
+            </div>
+            <div class="toolbar">
+                <div class="title-badge">🎯 ビジョン・ボード</div>
+                <div class="btn-group"><button class="btn active" onclick="PM.setMode('map')">🧠 マップに戻る</button></div>
+            </div>
+        </div>
+
+        <div id="view-calendar" class="view-layer">
+            <div class="cal-top-bar">
+                <h2>📅 戦略カレンダー (2026)</h2>
+                <button class="btn active" onclick="PM.setMode('map')">🔙 マップに戻る</button>
+            </div>
+            <div id="cal-hud">
+                <div class="hud-card">
+                    <h3>🏆 年間ビジョン</h3>
+                    <div id="hud-year">---</div>
+                </div>
+                <div class="hud-card">
+                    <h3>🎯 今月のフォーカス</h3>
+                    <div id="hud-month">---</div>
+                </div>
+            </div>
+            <div id="cal-target" class="cal-grid"></div>
+        </div>
+
+        <div id="view-main" class="view-layer active-view">
+            <div id="map-area">
+                <div id="map-canvas" class="canvas grid-bg"><svg id="svg-layer"></svg></div>
+                <div class="toolbar">
+                    <div class="title-badge">Strategic Mind v6.5 (Atlas Hub)</div>
+                    <div class="btn-group">
+                        <button class="btn" onclick="PM.setMode('goals')">🎯 ビジョン</button>
+                        <button class="btn active" id="btn-map" onclick="PM.setMode('map')">🧠 マップ</button>
+                        <button class="btn" onclick="PM.setMode('cal')">📅 カレンダー</button>
+                        <button class="btn" onclick="PM.alignNotes()">🧹 整列</button>
+                        <button class="btn" onclick="PM.saveData()">💾 保存</button>
+                        <button class="btn" onclick="document.getElementById('file-input').click()">📁 読込</button>
+                        <input type="file" id="file-input" style="display:none" onchange="PM.loadData(event)">
+                        <button class="btn" onclick="document.getElementById('file-append-input').click()">➕ 追記</button>
+                        <input type="file" id="file-append-input" style="display:none" onchange="PM.appendData(event)">
+                    </div>
+                </div>
+            </div>
+            <div id="resizer"></div>
+            <div id="execution-area">
+                <div style="position: absolute; top: 5px; right: 20px; z-index: 100; display: flex; gap: 5px;">
+                    <button class="btn" onclick="PM.toggleGanttGoals()" title="目標バーの表示/非表示">👁️ Vision</button>
+                    <button class="btn" onclick="PM.changeZoom(5)">🔍+</button>
+                    <button class="btn" onclick="PM.changeZoom(-5)">🔍-</button>
+                </div>
+                <div id="gantt-view">
+                    <svg id="gantt-svg-layer"
+                        style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:50;"></svg>
+                    <div class="gantt-header" id="gantt-header"></div>
+                    <div id="gantt-container">
+                        <div id="gantt-target"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        /* INJECTED LOGIC WILL GO HERE */
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,11 @@
+- [ ] Plan: Create Implementation Plan (Current Step)
+- [ ] Step 1: Update `atlas/コード.js`
+    - [ ] Insert `PART` column at index 3
+    - [ ] Change `LOG_DATE` (col 9) to use `timestamp` instead of `date` (filename date)
+- [ ] Step 2: Update `atlas-hub/app.py`
+    - [ ] Escape f-string braces `{}` to `{{}}` in JS blocks
+    - [ ] Verify `load_data_from_drive` handles 14 columns
+- [ ] Step 3: Update `production_logic.py`
+    - [ ] Enforce strict 14-column logic
+    - [ ] Verify `PART` usage in grouping
+- [ ] Verify: User to deploy GAS and reload Streamlit

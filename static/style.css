@@ -1,0 +1,606 @@
+:root {
+    --bg: #1a1a1a;
+    --panel: rgba(45, 45, 45, 0.95);
+    --text: #eee;
+    --c-p: #fecb52;
+    --c-m: #ff80ab;
+    --c-a: #81d4fa;
+    --c-b: #c5e1a5;
+    --accent: #fecb52;
+}
+
+body,
+html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI Emoji', sans-serif;
+    overflow: hidden;
+}
+
+#main-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ビュー制御 */
+.view-layer {
+    display: none;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+#view-goals.active-view,
+#view-calendar.active-view {
+    display: block !important;
+}
+
+#view-main.active-view {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100%;
+    /* 念の為 */
+}
+
+/* ★修正: マップエリアの高さ確保 */
+#map-area {
+    height: 60%;
+    /* 初期高さ */
+    flex-shrink: 0;
+    /* 潰れ防止 */
+    position: relative;
+    overflow: hidden;
+    background: #222;
+    z-index: 10;
+}
+
+/* キャンバス */
+.canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5000px;
+    height: 5000px;
+    transform-origin: 0 0;
+    cursor: grab;
+}
+
+.canvas:active {
+    cursor: grabbing;
+}
+
+.grid-bg {
+    background: radial-gradient(#333 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+.vision-bg {
+    background: radial-gradient(#444 1px, transparent 1px);
+    background-size: 60px 60px;
+    background-color: #111;
+}
+
+#svg-layer,
+#vision-svg-layer,
+#gantt-svg-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* 付箋 */
+.sticky-note {
+    position: absolute;
+    width: 190px;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    color: #000;
+    z-index: 10;
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sticky-note:active {
+    cursor: grabbing;
+}
+
+.color-p {
+    background: var(--c-p) !important;
+}
+
+.color-m {
+    background: var(--c-m) !important;
+}
+
+.color-a {
+    background: var(--c-a) !important;
+}
+
+.color-b {
+    background: var(--c-b) !important;
+}
+
+.selected {
+    outline: 3px solid #fff;
+    z-index: 100;
+}
+
+/* v5.4: 完了ステータス */
+.completed {
+    opacity: 0.6;
+    filter: grayscale(80%);
+}
+
+.gantt-bar.completed {
+    background-color: #888 !important;
+    text-decoration: line-through;
+    color: #444;
+}
+
+/* v5.6: Bottleneck Style (v6.1 Enhanced) */
+.sticky-note.bottleneck {
+    background: #222 !important;
+    border: 2px dashed #fecb52 !important;
+    color: #fecb52 !important;
+    box-shadow: 0 0 15px rgba(254, 203, 82, 0.4);
+    z-index: 50;
+    /* 少し浮かせる */
+}
+
+.sticky-note.bottleneck input,
+.sticky-note.bottleneck textarea,
+.sticky-note.bottleneck select {
+    color: #fecb52 !important;
+}
+
+.bottleneck input,
+.bottleneck textarea,
+.bottleneck select {
+    color: #fecb52 !important;
+}
+
+.btn-check {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 200;
+    line-height: 1;
+    padding: 0;
+    transition: transform 0.2s;
+}
+
+.btn-check:hover {
+    transform: scale(1.2);
+}
+
+/* 大付箋 */
+.goal-node {
+    width: 340px !important;
+    min-height: 220px !important;
+    background: rgba(255, 255, 255, 0.25) !important;
+    backdrop-filter: blur(15px);
+    border: 3px solid #fff;
+    color: #000 !important;
+}
+
+.goal-node textarea,
+.goal-node input {
+    color: #000 !important;
+    font-weight: bold;
+    background: transparent;
+    border: none;
+    width: 100%;
+}
+
+.goal-node select {
+    background: rgba(255, 255, 255, 0.6) !important;
+    color: #000;
+    border: none;
+    width: 100%;
+    margin-top: 5px;
+}
+
+/* 入力部品 */
+.note-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.icon-select {
+    width: 40px;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.5);
+    border: none;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.note-title {
+    font-weight: bold;
+    font-size: 13px;
+    border: none;
+    background: transparent;
+    width: 100%;
+    outline: none;
+}
+
+.note-meta {
+    display: flex;
+    gap: 2px;
+}
+
+.note-meta input,
+.note-meta select {
+    flex: 1;
+    font-size: 10px;
+    border: none;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 3px;
+}
+
+.note-memo {
+    /* 既存のスタイルを維持しつつ、transitionを追加 */
+    width: 100%;
+    height: 30px;
+    font-size: 10px;
+    border: none;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    resize: none;
+    outline: none;
+    color: #000;
+    margin-top: 2px;
+    font-family: inherit;
+    transition: height 0.2s, z-index 0s;
+    /* アニメーション追加 */
+}
+
+/* フォーカス時に広がる設定 */
+.sticky-note:focus-within {
+    z-index: 9999 !important;
+    /* 親の付箋を最前面に */
+}
+
+.note-memo:focus {
+    height: 100px;
+    /* 入力時に広げる */
+    background: rgba(255, 255, 255, 0.9);
+    position: relative;
+    z-index: 10000;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.note-memo::placeholder {
+    color: rgba(0, 0, 0, 0.5);
+}
+
+.link-handle {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 24px;
+    height: 24px;
+    background: #fff;
+    border-radius: 50%;
+    border: 2px solid #333;
+    cursor: crosshair;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: #000;
+    font-size: 16px;
+}
+
+/* ガント (下段) */
+#resizer {
+    height: 8px;
+    background: #444;
+    cursor: ns-resize;
+    z-index: 2000;
+    flex-shrink: 0;
+}
+
+/* ★修正: ガントエリア */
+#execution-area {
+    flex: 1;
+    background: #222;
+    overflow: hidden;
+    border-top: 2px solid #555;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+#gantt-view {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+}
+
+#gantt-container {
+    min-width: 3500px;
+    position: relative;
+    padding-left: 0;
+    padding-top: 50px;
+}
+
+.gantt-header {
+    display: flex;
+    position: sticky;
+    top: 0;
+    background: #333;
+    z-index: 30;
+    height: 40px;
+    border-bottom: 2px solid #555;
+    padding-left: 180px;
+}
+
+.gantt-day {
+    width: 49px;
+    border-right: 1px solid #444;
+    text-align: center;
+    font-size: 10px;
+    line-height: 40px;
+    color: #aaa;
+    color: #aaa;
+    flex-shrink: 0;
+}
+
+.weekend-sat {
+    background: rgba(100, 181, 246, 0.1);
+}
+
+.weekend-sun {
+    background: rgba(255, 82, 82, 0.1);
+}
+
+.gantt-row {
+    display: flex;
+    border-bottom: 1px solid #333;
+    height: 35px;
+    align-items: center;
+    position: relative;
+}
+
+.gantt-label {
+    position: sticky;
+    left: 0;
+    width: 170px;
+    font-size: 10px;
+    padding-left: 10px;
+    color: #ccc;
+    background: #222;
+    z-index: 40;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border-right: 1px solid #444;
+}
+
+.gantt-bar {
+    position: absolute;
+    height: 24px;
+    border-radius: 12px;
+    font-size: 11px;
+    padding: 0 8px;
+    color: #000;
+    font-weight: bold;
+    line-height: 24px;
+    cursor: move;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+}
+
+.gantt-resizer {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 10px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 25;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 0 12px 12px 0;
+}
+
+.gantt-link-point {
+    position: absolute;
+    right: -6px;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    background: #2196F3;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: crosshair;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.gantt-bar:hover .gantt-link-point {
+    opacity: 1;
+}
+
+/* カレンダー */
+#view-calendar {
+    background: #111;
+    padding: 20px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.cal-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    color: #fff;
+}
+
+#cal-hud {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.hud-card {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 15px;
+    border-radius: 10px;
+    border: 1px solid #444;
+}
+
+.hud-card h3 {
+    color: var(--accent);
+    font-size: 12px;
+    margin: 0 0 5px 0;
+}
+
+.hud-input {
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+    background: transparent;
+    border: none;
+    width: 100%;
+    outline: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    transition: 0.3s;
+}
+
+.hud-input:focus {
+    border-bottom: 1px solid var(--accent);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.cal-grid {
+    display: grid;
+    grid-template-columns: 140px repeat(7, 1fr);
+    gap: 1px;
+    background: #444;
+    border: 1px solid #444;
+}
+
+.cal-header {
+    background: #333;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 12px;
+    color: #eee;
+}
+
+.cal-day {
+    background: #222;
+    min-height: 100px;
+    padding: 5px;
+    font-size: 11px;
+}
+
+.cal-week-col {
+    background: #2a2a2a;
+    border-right: 2px solid var(--accent);
+    padding: 5px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.week-input {
+    width: 100%;
+    height: 80px;
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 11px;
+    resize: none;
+    outline: none;
+}
+
+.week-input::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+}
+
+.cal-task {
+    margin-top: 2px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    color: #000;
+    font-weight: bold;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ツールバー */
+.toolbar {
+    position: absolute;
+    top: 15px;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 20px;
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 4000;
+}
+
+.btn-group {
+    display: flex;
+    gap: 5px;
+    pointer-events: auto;
+}
+
+.btn {
+    padding: 8px 12px;
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.btn.active {
+    background: var(--accent);
+    color: #000;
+}
+
+.title-badge {
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--accent);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    pointer-events: auto;
+}
