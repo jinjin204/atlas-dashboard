@@ -36,32 +36,93 @@ OUTPUT_FILENAME = "atlas_integrated_data.json"
 # 認証（drive_utils.pyと共通のtoken.jsonを使用）
 # ================================================================
 def _get_credentials():
-    """token.json または st.secrets から認証情報を取得する"""
-    token_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'token.json')
+    """
+    認証情報を取得する（3段階フォールバック）:
+    1. token.json が存在すれば読み込み（有効期限切れならリフレッシュ）
+    2. credentials.json が存在すればブラウザ認証フロー（InstalledAppFlow）
+    3. st.secrets["google_oauth"] から構築（クラウド用）
+    """
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    token_file = os.path.join(base_dir, 'token.json')
+    creds_file = os.path.join(base_dir, 'credentials.json')
     
+    creds = None
+    
+    # --- Step 1: token.json から読み込み ---
     if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, CALENDAR_SCOPES)
-        if not creds.valid and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        return creds
+        try:
+            creds = Credentials.from_authorized_user_file(token_file, CALENDAR_SCOPES)
+            print(f"[calendar_agent] token.json 読み込み成功")
+        except Exception as e:
+            print(f"[calendar_agent] token.json 読み込みエラー: {e}")
+            creds = None
     
-    # Streamlit Cloud 用フォールバック
+    # --- トークンの有効性チェック＆リフレッシュ ---
+    if creds:
+        if creds.valid:
+            return creds
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                # リフレッシュ後のtoken.jsonを更新保存
+                with open(token_file, 'w') as f:
+                    f.write(creds.to_json())
+                print("[calendar_agent] トークンをリフレッシュしました")
+                return creds
+            except Exception as e:
+                print(f"[calendar_agent] トークンリフレッシュ失敗: {e}")
+                # スコープ変更等でリフレッシュ不可の場合は再認証へ
+                creds = None
+        else:
+            # refresh_tokenが無い or 期限切れでない異常状態 → 再認証
+            print("[calendar_agent] トークンが無効です。再認証します。")
+            creds = None
+    
+    # --- Step 2: credentials.json でブラウザ認証（ローカル） ---
+    if os.path.exists(creds_file):
+        try:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            print("[calendar_agent] ブラウザ認証を開始します...")
+            flow = InstalledAppFlow.from_client_secrets_file(creds_file, CALENDAR_SCOPES)
+            creds = flow.run_local_server(port=0)
+            
+            # token.json に保存
+            with open(token_file, 'w') as f:
+                f.write(creds.to_json())
+            print(f"[calendar_agent] ✅ 認証完了。token.json を保存しました: {token_file}")
+            
+            # refresh_token を画面に表示（st.secrets設定用）
+            if creds.refresh_token:
+                print(f"[calendar_agent] 📋 refresh_token: {creds.refresh_token}")
+                print("[calendar_agent] ↑ この値を st.secrets の google_oauth.refresh_token に設定してください")
+            
+            return creds
+        except Exception as e:
+            print(f"[calendar_agent] ブラウザ認証エラー: {e}")
+            creds = None
+    
+    # --- Step 3: st.secrets フォールバック（クラウド） ---
     try:
         import streamlit as st
-        oauth_info = st.secrets["google_oauth"]
+        oauth_info = st.secrets.get("google_oauth", {})
+        refresh_token = oauth_info.get("refresh_token", "")
+        if not refresh_token:
+            print("[calendar_agent] st.secrets に refresh_token が未設定です")
+            return None
+        
         creds = Credentials(
             token=oauth_info.get("token", ""),
-            refresh_token=oauth_info["refresh_token"],
+            refresh_token=refresh_token,
             token_uri=oauth_info.get("token_uri", "https://oauth2.googleapis.com/token"),
-            client_id=oauth_info["client_id"],
-            client_secret=oauth_info["client_secret"],
+            client_id=oauth_info.get("client_id", ""),
+            client_secret=oauth_info.get("client_secret", ""),
             scopes=CALENDAR_SCOPES,
         )
         if not creds.valid:
             creds.refresh(Request())
         return creds
     except Exception as e:
-        print(f"[calendar_agent] 認証エラー: {e}")
+        print(f"[calendar_agent] st.secrets 認証エラー: {e}")
         return None
 
 
