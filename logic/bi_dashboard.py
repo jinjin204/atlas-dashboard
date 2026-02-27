@@ -524,7 +524,18 @@ def calc_burnup_data(master_data, event_master=None):
     # 日付順にソート
     sorted_dates = sorted(daily_data.keys())
     actual = [{"date": d, "revenue": daily_data[d]} for d in sorted_dates]
-    start_date = sorted_dates[0]
+
+    # start_date: type="initial" のレコードから動的取得（ハードコード厳禁）
+    start_date = None
+    for entry in history:
+        if entry.get('type') == 'initial':
+            ts = entry.get('date') or entry.get('timestamp', '')
+            if ts:
+                start_date = ts[:10]  # YYYY-MM-DD
+                break
+    # フォールバック: initial未発見時は最古のデータ日付
+    if not start_date:
+        start_date = sorted_dates[0]
 
     # イベント情報取得
     countdown = calc_countdown(event_master=event_master)

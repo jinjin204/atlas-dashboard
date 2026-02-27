@@ -195,17 +195,13 @@ def sync_from_drive():
             logger.error("Google Drive認証失敗")
             return []
 
-        # ファイル検索
-        file_meta = drive_utils.find_file(service, "メニュー")
-        if not file_meta:
-            logger.error("Drive上に 'メニュー' を含むファイルが見つかりません。")
-            return []
-
-        file_id = file_meta['id']
-        file_name = file_meta['name']
-        mime_type = file_meta['mimeType']
+        # ファイルID直接指定でダウンロード（find_file検索を回避）
+        from logic.drive_utils import MASTER_FILE_ID, MASTER_FILE_MIME
+        file_id = MASTER_FILE_ID
+        mime_type = MASTER_FILE_MIME
+        file_name = "メニュー.xlsx"
         
-        print(f"File Found: {file_name} ({file_id})")
+        print(f"File: {file_name} (ID: {file_id})")
         
         # ダウンロード
         stream = drive_utils.download_content(service, file_id, mime_type)
