@@ -291,24 +291,27 @@ with st.sidebar:
 
     st.divider()
     if st.button("🔄 最新データに更新", use_container_width=True, help="Driveから最新のメニュー.xlsxを再取得します"):
-        with st.spinner("Google Driveから最新マスタを取得中..."):
-            # キャッシュを破棄してDriveから強制再取得
-            st.cache_data.clear()
-            new_master_df, _, new_sheets, new_bytes = load_data_from_drive()
-            if new_master_df is not None:
-                master_list = convert_dataframe_to_json(new_master_df, force=True)
-                
-                # 更新後即座に合算を実行
-                master_list = merge_event_targets(master_list, new_bytes, None)
-                
-                st.session_state['master_data'] = master_list
-                if new_sheets:
-                    st.session_state['event_sheet_names'] = new_sheets
-                if new_bytes:
-                    st.session_state['excel_bytes'] = new_bytes
-                st.success(f"✅ マスタデータ更新完了（{len(master_list)} 件）")
-            else:
-                st.error("Driveからの取得に失敗しました。")
+        try:
+            with st.spinner("Google Driveから最新マスタを取得中..."):
+                # キャッシュを破棄してDriveから強制再取得
+                st.cache_data.clear()
+                new_master_df, _, new_sheets, new_bytes = load_data_from_drive()
+                if new_master_df is not None:
+                    master_list = convert_dataframe_to_json(new_master_df, force=True)
+                    
+                    # 更新後即座に合算を実行
+                    master_list = merge_event_targets(master_list, new_bytes, None)
+                    
+                    st.session_state['master_data'] = master_list
+                    if new_sheets:
+                        st.session_state['event_sheet_names'] = new_sheets
+                    if new_bytes:
+                        st.session_state['excel_bytes'] = new_bytes
+                    st.success(f"✅ マスタデータ更新完了（{len(master_list)} 件）")
+                else:
+                    st.warning("⚠️ Driveからのデータ取得に失敗しました。認証情報を確認してください。")
+        except Exception as e:
+            st.error(f"❌ データ更新中にエラーが発生しました: {e}")
         st.rerun()
 
     st.divider()

@@ -14,6 +14,12 @@ CREDENTIALS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
 TARGET_FOLDER_ID = "1swLvCAzeFx8N9DhG5jfeUXPvlhCmCK6i"
 
+# --- ファイルID直接指定（検索不要・クラウドでも確実） ---
+MASTER_FILE_ID = "127mB52AEe-c9RziCiyfFyzRgCK6dYoi9"          # メニュー.xlsx
+MASTER_FILE_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+LOG_FILE_ID = "1N9Rmg3z_Iohvrpd5QPtVSvstozuOYp0117PSVjUKq-U"  # アトラス (Google Spreadsheet)
+LOG_FILE_MIME = "application/vnd.google-apps.spreadsheet"
+
 # --- Phase 1: クラウド同期対象ファイルのDrive ID ---
 HISTORY_SUMMARY_DRIVE_ID = "1LTM58WGFT27DpEZ_1TPBeQiJcSr6-uRT"
 ATLAS_LOG_DRIVE_ID = "1N9Rmg3z_Iohvrpd5QPtVSvstozuOYp0117PSVjUKq-U"
@@ -289,24 +295,12 @@ def load_data_from_drive():
         return None, None, [], None
     print("[load_data] Step 1: OK")
         
-    status_area.info("🔵 Searching files...")
-    print("[load_data] Step 2: Searching files...")
-    master_file = find_file(service, "メニュー")
-    log_file = find_file(service, "アトラス")
-    
-    if not master_file or not log_file:
-        status_area.warning("Files not found in Drive.")
-        print(f"[load_data] FAIL: master_file={master_file}, log_file={log_file}")
-        return None, None, [], None
-    print(f"[load_data] Step 2: OK - master={master_file['name']}, log={log_file['name']}")
-        
-    status_area.info(f"⬇️ Downloading: {master_file['name']}...")
-    print(f"[load_data] Step 3: Downloading master...")
-    master_stream = download_content(service, master_file['id'], master_file['mimeType'])
-    
-    status_area.info(f"⬇️ Downloading: {log_file['name']}...")
-    print(f"[load_data] Step 4: Downloading log...")
-    log_stream = download_content(service, log_file['id'], log_file['mimeType'])
+    status_area.info("🔵 Downloading files...")
+    print("[load_data] Step 2: Downloading by direct file ID...")
+
+    # ファイルID直接指定でダウンロード（検索不要）
+    master_stream = download_content(service, MASTER_FILE_ID, MASTER_FILE_MIME)
+    log_stream = download_content(service, LOG_FILE_ID, LOG_FILE_MIME)
     
     if not master_stream:
         print("[load_data] FAIL: master_stream is None")
