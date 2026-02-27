@@ -18,7 +18,39 @@ TARGET_FOLDER_ID = "1swLvCAzeFx8N9DhG5jfeUXPvlhCmCK6i"
 HISTORY_SUMMARY_DRIVE_ID = "1LTM58WGFT27DpEZ_1TPBeQiJcSr6-uRT"
 ATLAS_LOG_DRIVE_ID = "1N9Rmg3z_Iohvrpd5QPtVSvstozuOYp0117PSVjUKq-U"
 
-def authenticate():
+def _is_cloud():
+    """ローカル環境かクラウド環境かを判定する"""
+    src_dir = 'PM_Strategic Mind & Pipeline'
+    return not (os.path.exists(os.path.join(os.path.expanduser('~'), '.gemini', src_dir)) or os.path.exists(src_dir))
+
+
+def _authenticate_cloud():
+    """
+    Streamlit Cloud用: st.secrets["google_oauth"] からOAuth2認証を復元する。
+    リフレッシュトークンを使って自動的にアクセストークンを再取得する。
+    """
+    try:
+        oauth_info = st.secrets["google_oauth"]
+        creds = Credentials(
+            token=oauth_info.get("token", ""),
+            refresh_token=oauth_info["refresh_token"],
+            token_uri=oauth_info.get("token_uri", "https://oauth2.googleapis.com/token"),
+            client_id=oauth_info["client_id"],
+            client_secret=oauth_info["client_secret"],
+            scopes=SCOPES,
+        )
+        # トークンが期限切れの場合は自動リフレッシュ
+        if not creds.valid:
+            creds.refresh(Request())
+        return build('drive', 'v3', credentials=creds)
+    except Exception as e:
+        st.error(f"☁️ クラウド認証エラー: {e}")
+        print(f"[authenticate_cloud] ERROR: {e}")
+        return None
+
+
+def _authenticate_local():
+    """ローカル用: token.json / credentials.json ファイルから認証する。"""
     creds = None
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
@@ -42,6 +74,15 @@ def authenticate():
             token.write(creds.to_json())
             
     return build('drive', 'v3', credentials=creds)
+
+
+def authenticate():
+    """環境に応じて適切な認証方法を選択する"""
+    if _is_cloud():
+        return _authenticate_cloud()
+    else:
+        return _authenticate_local()
+
 
 def find_file(service, keyword):
     try:
