@@ -9,7 +9,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
+SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/calendar.readonly',
+]
 CREDENTIALS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
 TARGET_FOLDER_ID = "1swLvCAzeFx8N9DhG5jfeUXPvlhCmCK6i"
