@@ -39,13 +39,27 @@ def _authenticate_cloud():
     リフレッシュトークンを使って自動的にアクセストークンを再取得する。
     """
     try:
-        oauth_info = st.secrets["google_oauth"]
+        # st.secrets に google_oauth キーが存在するか安全にチェック
+        if not hasattr(st, 'secrets'):
+            print("[authenticate_cloud] st.secrets が利用不可")
+            return None
+
+        oauth_info = st.secrets.get("google_oauth", None)
+        if not oauth_info:
+            print("[authenticate_cloud] st.secrets に google_oauth キーが存在しません")
+            return None
+
+        refresh_token = oauth_info.get("refresh_token", "")
+        if not refresh_token:
+            print("[authenticate_cloud] refresh_token が設定されていません")
+            return None
+
         creds = Credentials(
             token=oauth_info.get("token", ""),
-            refresh_token=oauth_info["refresh_token"],
+            refresh_token=refresh_token,
             token_uri=oauth_info.get("token_uri", "https://oauth2.googleapis.com/token"),
-            client_id=oauth_info["client_id"],
-            client_secret=oauth_info["client_secret"],
+            client_id=oauth_info.get("client_id", ""),
+            client_secret=oauth_info.get("client_secret", ""),
             scopes=SCOPES,
         )
         # トークンが期限切れの場合は自動リフレッシュ
@@ -86,7 +100,19 @@ def _authenticate_local():
 
 
 def authenticate():
-    """環境に応じて適切な認証方法を選択する"""
+    """
+    環境に応じて適切な認証方法を選択する。
+    ローカルの token.json を最優先で試行し、失敗時のみクラウド認証にフォールバック。
+    """
+    # 1. ローカルの token.json が存在すれば最優先で使用
+    if os.path.exists(TOKEN_FILE):
+        print("[authenticate] token.json が存在 → ローカル認証を優先")
+        result = _authenticate_local()
+        if result:
+            return result
+        print("[authenticate] ローカル認証失敗 → クラウド認証にフォールバック")
+
+    # 2. token.json が無い場合、環境判定してクラウドまたはローカル認証
     if _is_cloud():
         return _authenticate_cloud()
     else:

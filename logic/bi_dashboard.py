@@ -562,22 +562,27 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     if not history or not master_data:
         return None
 
-    # master_data から ID→price のマップを作成
+    # master_data から ID→price のマップと平均単価を作成
     price_map = {}
+    total_price_sum = 0
+    price_count = 0
     for item in master_data:
         item_id = item.get('id', '')
         price = item.get('price', 0)
         if item_id and price > 0:
             price_map[item_id] = price
+            total_price_sum += price
+            price_count += 1
+    # details無しエントリ用の平均単価（フォールバック推定に使用）
+    avg_price = total_price_sum / price_count if price_count > 0 else 0
 
-    # details付きエントリから各時点の完成金額を算出
+    # 全履歴エントリから各日の完成金額を算出
+    # - details付き: count × price で正確に算出
+    # - details無し: total_current × 平均単価で推定
     daily_data = {}  # {date_str: revenue}
 
     for entry in history:
-        details = entry.get('details')
-        if not details:
-            continue
-
+        # 日付パース: "timestamp" と "date" の両方に対応
         ts = entry.get('timestamp') or entry.get('date', '')
         if not ts:
             continue
@@ -586,21 +591,30 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
             dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
         except (ValueError, TypeError):
             try:
-                dt = datetime.strptime(ts[:10], '%Y-%m-%d')
+                dt = datetime.strptime(str(ts)[:10], '%Y-%m-%d')
             except Exception:
                 continue
 
         date_str = dt.strftime('%Y-%m-%d')
 
-        # count × price で完成金額を算出
-        revenue = 0
-        for item_id, item_data in details.items():
-            count = item_data.get('count', 0)
-            price = price_map.get(item_id, 0)
-            revenue += count * price
-
-        # 同日の最新データで上書き
-        daily_data[date_str] = revenue
+        details = entry.get('details')
+        if details:
+            # details付き: 各ID × price で正確にrevenue算出
+            revenue = 0
+            for item_id, item_data in details.items():
+                count = item_data.get('count', 0)
+                price = price_map.get(item_id, 0)
+                revenue += count * price
+            # 同日の最新データで上書き
+            daily_data[date_str] = revenue
+        else:
+            # details無し: total_current × 平均単価で推定
+            total_current = entry.get('total_current', 0)
+            if total_current and total_current > 0 and avg_price > 0:
+                estimated_revenue = int(total_current * avg_price)
+                # details付きデータがある場合はそちらを優先（上書きしない）
+                if date_str not in daily_data:
+                    daily_data[date_str] = estimated_revenue
 
     if not daily_data:
         return None
@@ -615,6 +629,12 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     if not start_date:
         start_date = sorted_dates[0]
         print(f"[calc_burnup_data] フォールバック: 最古実績日 {start_date} を起点に使用")
+
+    # 起点日にデータがなければ revenue=0 の基準点を挿入（線グラフの始点）
+    if start_date not in daily_data:
+        daily_data[start_date] = 0
+        sorted_dates = sorted(daily_data.keys())
+        actual = [{"date": d, "revenue": daily_data[d]} for d in sorted_dates]
 
     # イベント情報取得
     countdown = calc_countdown(event_master=event_master)
