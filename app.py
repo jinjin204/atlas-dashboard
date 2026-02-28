@@ -16,13 +16,15 @@ try:
     from logic.production_logic import calculate_production_events
     from logic.inventory import calculate_inventory, confirm_production, cancel_confirmation
     from logic.master_loader import convert_csv_to_json, convert_dataframe_to_json, load_master_json, merge_event_targets
-    from logic.bi_dashboard import calc_countdown, calc_sales_gap, calc_remaining_hours, calc_today_tasks, calc_material_alerts, calc_dev_slot, calc_burnup_data
     from components.CatalogCard import render_catalog_card
     from logic import zeus_chat
     import logic.master_loader
+    import logic.bi_dashboard
     import importlib
     importlib.reload(zeus_chat)
     importlib.reload(logic.master_loader)
+    importlib.reload(logic.bi_dashboard)
+    from logic.bi_dashboard import calc_countdown, calc_sales_gap, calc_remaining_hours, calc_today_tasks, calc_material_alerts, calc_dev_slot, calc_burnup_data
     from logic.zeus_chat import build_system_prompt, get_chat_response
 except ImportError as e:
     st.error(f"Modules not found: {e}")
@@ -748,7 +750,8 @@ elif selection == "📊 BI Dashboard":
 
         # 実績ライン
         actual_dates = [a['date'] for a in burnup['actual']]
-        actual_values = [a['count'] for a in burnup['actual']]
+        # キャッシュ残存時の安全対策として get を使用
+        actual_values = [a.get('count', a.get('revenue', 0)) for a in burnup['actual']]
         fig.add_trace(go.Scatter(
             x=actual_dates,
             y=actual_values,
