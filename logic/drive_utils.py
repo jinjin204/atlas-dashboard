@@ -438,6 +438,12 @@ def upload_to_drive(local_path, drive_file_id):
         tuple: (success: bool, message: str)
     """
     try:
+        # WEB環境（Streamlit Cloud）ではデータの破壊を防ぐためアップロードを完全禁止する
+        if _is_cloud():
+            msg = "WEB環境のためDriveへのアップロード処理をスキップしました (Read-Only)"
+            print(f"[upload_to_drive] {msg}")
+            return True, msg
+
         if not os.path.exists(local_path):
             return False, f"❌ ファイルが見つかりません: {local_path}"
 
