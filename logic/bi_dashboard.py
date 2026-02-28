@@ -569,20 +569,34 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     if not history or not master_data:
         return None
 
-    # master_data から ID→price のマップを作成
+    # master_data から ID→price のマップと目標総数を作成
     price_map = {}
+    valid_target_count = 0
     for item in master_data:
         item_id = item.get('id', '')
         price = item.get('price', 0)
+        target = item.get('target_quantity', 0)
         if item_id and price > 0:
             price_map[item_id] = price
+            valid_target_count += target
 
-    # 履歴エントリからの完成金額算出（正確な生産金額のみ）
-    # ダミーデータ排除のため、details情報の「総生産個数」概算推測は実施しない
-    daily_data = {}  # {date_str: revenue}
+    # ダミーデータ(TEST-001など)によるオフセットを検出
+    # 最初の initial エントリの実個数と total_current の差分をダミー分とする
+    dummy_offset = 0
+    for entry in history:
+        if entry.get('type') == 'initial':
+            tc = entry.get('total_current', 0)
+            det = entry.get('details', {})
+            val = sum(d.get('count', 0) for k, d in det.items() if k in price_map)
+            dummy_offset = tc - val
+            break
+
+    # 履歴エントリからの完成個数算出（一貫した正しい計算基準：ダミー排除済の個数推移）
+    daily_data = {}  # {date_str: valid_count}
+    has_details_flag = set()  # details情報のあった日付を記録
 
     for entry in history:
-        # 日付パース: "timestamp" と "date" の両方に対応
+        # 日付パース
         ts = entry.get('timestamp') or entry.get('date', '')
         if not ts:
             continue
@@ -598,26 +612,26 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
         date_str = dt.strftime('%Y-%m-%d')
 
         details = entry.get('details')
-        # detailsが無い古い履歴はグラフにプロットしない（確実に一致するrevenueのみ採用）
         if details:
-            revenue = 0
-            has_valid_item = False
-            for item_id, item_data in details.items():
-                count = item_data.get('count', 0)
-                price = price_map.get(item_id, 0)
-                if price > 0:
-                    has_valid_item = True
-                revenue += count * price
+            # detailsがある場合は、price_mapに存在する実在アイテムのみを合算（TEST-001等を確実に排除）
+            valid_count = sum(item_data.get('count', 0) for item_id, item_data in details.items() if item_id in price_map)
+            daily_data[date_str] = valid_count
+            has_details_flag.add(date_str)
+        else:
+            # detailsがない古い履歴は total_current から initialで検出したダミーオフセットを引いて実個数を推定
+            total_current = entry.get('total_current', 0)
+            valid_count = max(0, total_current - dummy_offset)
             
-            # 該当日の最新レコードで上書き（TEST-001などの有効アイテム0のエントリはrevenue=0になる）
-            daily_data[date_str] = revenue
+            # 該当日の最新レコードで上書き（ただし正確なdetails算出値がすでにある場合は保護する）
+            if date_str not in has_details_flag:
+                daily_data[date_str] = valid_count
 
     if not daily_data:
         return None
 
     # 日付順にソート
     sorted_dates = sorted(daily_data.keys())
-    actual = [{"date": d, "revenue": daily_data[d]} for d in sorted_dates]
+    actual = [{"date": d, "count": daily_data[d]} for d in sorted_dates]
 
     # start_date: メニュー.xlsxのイベントマスタシートから動的算出
     start_date = _calc_burnup_start_date(excel_bytes)
@@ -626,11 +640,11 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
         start_date = sorted_dates[0]
         print(f"[calc_burnup_data] フォールバック: 最古実績日 {start_date} を起点に使用")
 
-    # 起点日にデータがなければ revenue=0 の基準点を挿入（線グラフの始点）
+    # 起点日にデータがなければ count=0 の基準点を挿入（線グラフの始点）
     if start_date not in daily_data:
         daily_data[start_date] = 0
         sorted_dates = sorted(daily_data.keys())
-        actual = [{"date": d, "revenue": daily_data[d]} for d in sorted_dates]
+        actual = [{"date": d, "count": daily_data[d]} for d in sorted_dates]
 
     # イベント情報取得
     countdown = calc_countdown(event_master=event_master)
@@ -644,9 +658,9 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     return {
         "actual": actual,
         "targets": [
-            {"label": "80万目標", "value": 800000},
-            {"label": "70万目標", "value": 700000},
-            {"label": "60万目標", "value": 600000},
+            {"label": "100% 目標", "value": valid_target_count},
+            {"label": "80% 目標", "value": int(valid_target_count * 0.8)},
+            {"label": "60% 目標", "value": int(valid_target_count * 0.6)},
         ],
         "start_date": start_date,
         "event_date": event_date,
