@@ -569,31 +569,20 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     if not history or not master_data:
         return None
 
-    # master_data から ID→price のマップと目標総数を作成
+    # master_data から ID→price のマップと目標総売上を作成
     price_map = {}
-    valid_target_count = 0
+    valid_target_revenue = 0
     for item in master_data:
         item_id = item.get('id', '')
         price = item.get('price', 0)
         target = item.get('target_quantity', 0)
         if item_id and price > 0:
             price_map[item_id] = price
-            valid_target_count += target
+            valid_target_revenue += target * price
 
-    # ダミーデータ(TEST-001など)によるオフセットを検出
-    # 最初の initial エントリの実個数と total_current の差分をダミー分とする
-    dummy_offset = 0
-    for entry in history:
-        if entry.get('type') == 'initial':
-            tc = entry.get('total_current', 0)
-            det = entry.get('details', {})
-            val = sum(d.get('count', 0) for k, d in det.items() if k in price_map)
-            dummy_offset = tc - val
-            break
-
-    # 履歴エントリからの完成個数算出（一貫した正しい計算基準：ダミー排除済の個数推移）
-    daily_data = {}  # {date_str: valid_count}
-    has_details_flag = set()  # details情報のあった日付を記録
+    # 履歴エントリからの完成金額算出（推測計算を廃止、事実行のみ計算）
+    daily_data = {}  # {date_str: valid_revenue}
+    has_details_flag = set()
 
     for entry in history:
         # 日付パース
@@ -613,38 +602,55 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
 
         details = entry.get('details')
         if details:
-            # detailsがある場合は、price_mapに存在する実在アイテムのみを合算（TEST-001等を確実に排除）
-            valid_count = sum(item_data.get('count', 0) for item_id, item_data in details.items() if item_id in price_map)
-            daily_data[date_str] = valid_count
+            # detailsがある場合は、各アイテムの「個数×単価」を合算
+            valid_revenue = sum(item_data.get('count', 0) * price_map.get(item_id, 0)
+                                for item_id, item_data in details.items() if item_id in price_map)
+            daily_data[date_str] = valid_revenue
             has_details_flag.add(date_str)
-        else:
-            # detailsがない古い履歴は total_current から initialで検出したダミーオフセットを引いて実個数を推定
-            total_current = entry.get('total_current', 0)
-            valid_count = max(0, total_current - dummy_offset)
-            
-            # 該当日の最新レコードで上書き（ただし正確なdetails算出値がすでにある場合は保護する）
-            if date_str not in has_details_flag:
-                daily_data[date_str] = valid_count
+        # detailsがない推測値の利用（旧合計個数ベース等の推定計算）は行わず無視する（グラフを点のみにする）
 
     if not daily_data:
         return None
 
     # 日付順にソート
     sorted_dates = sorted(daily_data.keys())
-    actual = [{"date": d, "count": daily_data[d]} for d in sorted_dates]
-
+    
     # start_date: メニュー.xlsxのイベントマスタシートから動的算出
     start_date = _calc_burnup_start_date(excel_bytes)
-    # フォールバック: Excel読込失敗時は実績データの最古日付
+    # フォールバック: Excel読込失敗時は実績データの最古日付または決め打ち
     if not start_date:
-        start_date = sorted_dates[0]
-        print(f"[calc_burnup_data] フォールバック: 最古実績日 {start_date} を起点に使用")
+        start_date = "2025-12-14"
+        print(f"[calc_burnup_data] フォールバック: 起点日 {start_date} を使用")
 
-    # 起点日にデータがなければ count=0 の基準点を挿入（線グラフの始点）
-    if start_date not in daily_data:
-        daily_data[start_date] = 0
-        sorted_dates = sorted(daily_data.keys())
-        actual = [{"date": d, "count": daily_data[d]} for d in sorted_dates]
+    # 起点日の初期資産額を計算（クリマ2512シートの「残数」から）
+    initial_revenue = 0
+    if excel_bytes:
+        try:
+            import io
+            # C列(ID) と AK列(残数) を取得
+            df_cur = pd.read_excel(io.BytesIO(excel_bytes), sheet_name='クリマ2512', usecols="C,AK")
+            for _, row in df_cur.iterrows():
+                raw_id = row.iloc[0]
+                raw_count = row.iloc[1]
+                if pd.isna(raw_id): continue
+                clean_id = str(raw_id).strip()
+                if not clean_id or clean_id not in price_map: continue
+                try:
+                    count = int(float(raw_count)) if pd.notna(raw_count) else 0
+                    if count > 0:
+                        initial_revenue += count * price_map[clean_id]
+                except:
+                    pass
+            print(f"[calc_burnup_data] クリマ2512初期資産計算: ¥{initial_revenue:,}")
+        except Exception as e:
+            print(f"[calc_burnup_data] 初期資産計算エラー: {e}")
+
+    # 起点日データとして確実な値を割り当てる
+    daily_data[start_date] = initial_revenue
+    
+    # ソートし直してactualリストを作成
+    sorted_dates = sorted(daily_data.keys())
+    actual = [{"date": d, "revenue": daily_data[d]} for d in sorted_dates]
 
     # イベント情報取得
     countdown = calc_countdown(event_master=event_master)
@@ -652,15 +658,15 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
         event_date = countdown['event_date']
         event_name = countdown['event_name']
     else:
-        event_date = sorted_dates[-1]
+        event_date = sorted_dates[-1] if sorted_dates else start_date
         event_name = '不明'
 
     return {
         "actual": actual,
         "targets": [
-            {"label": "100% 目標", "value": valid_target_count},
-            {"label": "80% 目標", "value": int(valid_target_count * 0.8)},
-            {"label": "60% 目標", "value": int(valid_target_count * 0.6)},
+            {"label": "100% 目標", "value": valid_target_revenue},
+            {"label": "80% 目標", "value": int(valid_target_revenue * 0.8)},
+            {"label": "60% 目標", "value": int(valid_target_revenue * 0.6)},
         ],
         "start_date": start_date,
         "event_date": event_date,

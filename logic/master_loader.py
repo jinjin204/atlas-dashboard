@@ -291,6 +291,39 @@ def load_master_json():
         logger.error(f"JSON読み込み失敗: {e}")
         return []
 
+def ensure_local_history(history_path):
+    """
+    ローカルにhistory_summary.jsonが無い場合、Google Driveからダウンロードを試みる。
+    クラウド起動時などでローカルファイルが消えている状態で初期化（上書き破壊）されるのを防ぐ。
+    """
+    if os.path.exists(history_path):
+        return
+        
+    try:
+        if not drive_utils or not HISTORY_SUMMARY_DRIVE_ID:
+            logger.info("Drive連携が設定されていないため、履歴の復旧をスキップします。")
+            return
+            
+        service = drive_utils.authenticate()
+        if not service:
+            logger.error("Drive認証失敗: 履歴の復旧をスキップします。")
+            return
+            
+        stream = drive_utils.download_content(service, HISTORY_SUMMARY_DRIVE_ID, 'application/json')
+        if not stream:
+            logger.info("Drive上にも履歴ファイルが存在しません。新規作成になります。")
+            return
+            
+        data = json.loads(stream.read().decode('utf-8'))
+        
+        # 安全に保存
+        os.makedirs(os.path.dirname(history_path), exist_ok=True)
+        with open(history_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        logger.info("✅ Driveから既存の history_summary.json を復元しました。")
+        print("✅ Restored existing history_summary.json from Drive.")
+    except Exception as e:
+        logger.error(f"既存履歴の復元に失敗しました: {e}")
 
 
 def _import_initial_from_note(xls, note_text, history_path):
@@ -308,6 +341,9 @@ def _import_initial_from_note(xls, note_text, history_path):
     
     if not note_text:
         return
+        
+    # クラウドなどでローカルファイルがない場合に初期化されるのを防ぐため、Driveから復旧
+    ensure_local_history(history_path)
     
     # パース: "クリマ2512 AK列" -> sheet_name="クリマ2512", col_letter="AK"
     # パターン: シート名 + 列名(アルファベット) + "列"
@@ -682,6 +718,8 @@ def merge_event_targets(master_list, excel_bytes, _unused_sheet_name=None):
     logger.info(f"全イベント合算完了: {merge_count} アイテムに目標を設定")
     
     # --- 履歴の保存 ---
+    ensure_local_history(HISTORY_PATH)
+    
     if not os.path.exists(HISTORY_PATH):
         history_data["type"] = "initial"
         try:
@@ -832,6 +870,7 @@ def import_initial_stock(excel_path=None, sheet_name='クリマ2512'):
         }
 
         # history_summary.json 更新
+        ensure_local_history(HISTORY_PATH)
         history_list = []
         if os.path.exists(HISTORY_PATH):
             try:

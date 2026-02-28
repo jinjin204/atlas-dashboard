@@ -751,7 +751,7 @@ elif selection == "📊 BI Dashboard":
         # 実績ライン
         actual_dates = [a['date'] for a in burnup['actual']]
         # キャッシュ残存時の安全対策として get を使用
-        actual_values = [a.get('count', a.get('revenue', 0)) for a in burnup['actual']]
+        actual_values = [a.get('revenue', a.get('count', 0)) for a in burnup['actual']]
         fig.add_trace(go.Scatter(
             x=actual_dates,
             y=actual_values,
@@ -759,7 +759,7 @@ elif selection == "📊 BI Dashboard":
             name='実績',
             line=dict(color='#00d4ff', width=3, shape='spline'),
             marker=dict(size=7, color='#00d4ff', line=dict(width=1, color='white')),
-            hovertemplate='%{x}<br><b>%{y:,.0f} 個</b><extra>実績</extra>',
+            hovertemplate='%{x}<br><b>¥%{y:,.0f}</b><extra>実績</extra>',
         ))
 
         # 目標ペースライン（3本）
@@ -772,7 +772,7 @@ elif selection == "📊 BI Dashboard":
                 mode='lines',
                 name=tgt['label'],
                 line=dict(color=target_colors[i], width=2, dash=target_dashes[i]),
-                hovertemplate=f"{tgt['label']}<br>"+"%{x}<br>%{y:,.0f} 個<extra></extra>",
+                hovertemplate=f"{tgt['label']}<br>"+"%{x}<br>¥%{y:,.0f}<extra></extra>",
             ))
 
         # レイアウト（ダークテーマ、スマホ対応）
@@ -796,7 +796,7 @@ elif selection == "📊 BI Dashboard":
                 showgrid=True,
             ),
             yaxis=dict(
-                title='完成個数 (個)',
+                title='資産額 (円)',
                 gridcolor='rgba(255,255,255,0.1)',
                 showgrid=True,
                 tickformat=',d',
