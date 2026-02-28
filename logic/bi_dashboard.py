@@ -13,9 +13,11 @@ KPI:
   6. 新作開発枠判定
 """
 
+import io
 import json
 import os
 import math
+import pandas as pd
 from datetime import datetime, timedelta
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -453,13 +455,95 @@ def _load_history_summary():
         return []
 
 
-def calc_burnup_data(master_data, event_master=None):
+def _calc_burnup_start_date(excel_bytes=None):
+    """
+    バーンアップチャートの起点日を動的に算出する。
+
+    メニュー.xlsx の「イベントマスタ」シートを読み込み、
+    アクティブイベント（H列=True）の直前にある終了済みイベントの
+    「開催日(C列) + 日数(D列) - 1」を起点日として返す。
+
+    Args:
+        excel_bytes: メニュー.xlsxのバイナリデータ
+
+    Returns:
+        str: 起点日 (YYYY-MM-DD) or None
+    """
+    if not excel_bytes:
+        return None
+
+    try:
+        # イベントマスタシートを読み込む（1行目=ヘッダー）
+        df = pd.read_excel(
+            io.BytesIO(excel_bytes if isinstance(excel_bytes, bytes) else excel_bytes),
+            sheet_name='イベントマスタ',
+            header=0,
+        )
+        print(f"[_calc_burnup_start_date] イベントマスタ読込: {len(df)}行")
+
+        # アクティブイベント行のインデックスを特定
+        # H列「アクティブフラグ」が True のイベントを探す
+        active_idx = None
+        for idx, row in df.iterrows():
+            flag = row.get('アクティブフラグ', '')
+            if flag is True or str(flag).strip().lower() == 'true':
+                active_idx = idx
+                break
+
+        if active_idx is None:
+            print("[_calc_burnup_start_date] アクティブイベントが見つかりません")
+            return None
+
+        if active_idx == 0:
+            print("[_calc_burnup_start_date] アクティブイベントが先頭行のため前イベントなし")
+            return None
+
+        # アクティブイベントの1つ前の行（直前の終了済みイベント）
+        prev_row = df.iloc[active_idx - 1]
+        prev_date = prev_row.get('開催日')
+        prev_days = prev_row.get('日数', 1)
+
+        if pd.isna(prev_date):
+            print("[_calc_burnup_start_date] 前イベントの開催日が空です")
+            return None
+
+        # pandas Timestamp → datetime
+        if hasattr(prev_date, 'to_pydatetime'):
+            prev_date = prev_date.to_pydatetime()
+        elif isinstance(prev_date, str):
+            prev_date = datetime.strptime(str(prev_date)[:10], '%Y-%m-%d')
+
+        # 日数のパース（NaN対策）
+        try:
+            days = int(prev_days) if not pd.isna(prev_days) else 1
+        except (ValueError, TypeError):
+            days = 1
+
+        # 起点日 = 前イベント開催日 + 日数 - 1 (最終日)
+        start_date = prev_date + timedelta(days=days - 1)
+        result = start_date.strftime('%Y-%m-%d')
+        print(f"[_calc_burnup_start_date] 算出: {prev_row.get('イベント名')} "
+              f"開催日={prev_date.strftime('%Y-%m-%d')} + {days}日 - 1 → 起点日={result}")
+        return result
+
+    except Exception as e:
+        print(f"[_calc_burnup_start_date] エラー: {e}")
+        return None
+
+
+def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     """
     バーンアップチャート用データを生成。
 
     1. history_summary.json の details 付きエントリから各時点の完成金額を算出
     2. アクティブイベント日付までの3本の目標ペースラインを生成
     3. 同日に複数スキャンがある場合は最新のみ採用
+    4. 起点日はメニュー.xlsxのイベントマスタシートから動的算出
+
+    Args:
+        master_data: 商品マスタデータ
+        event_master: イベントマスタJSON（オプション）
+        excel_bytes: メニュー.xlsxのバイナリデータ（起点日算出用）
 
     Returns:
         dict: {
@@ -525,17 +609,12 @@ def calc_burnup_data(master_data, event_master=None):
     sorted_dates = sorted(daily_data.keys())
     actual = [{"date": d, "revenue": daily_data[d]} for d in sorted_dates]
 
-    # start_date: type="initial" のレコードから動的取得（ハードコード厳禁）
-    start_date = None
-    for entry in history:
-        if entry.get('type') == 'initial':
-            ts = entry.get('date') or entry.get('timestamp', '')
-            if ts:
-                start_date = ts[:10]  # YYYY-MM-DD
-                break
-    # フォールバック: initial未発見時は最古のデータ日付
+    # start_date: メニュー.xlsxのイベントマスタシートから動的算出
+    start_date = _calc_burnup_start_date(excel_bytes)
+    # フォールバック: Excel読込失敗時は実績データの最古日付
     if not start_date:
         start_date = sorted_dates[0]
+        print(f"[calc_burnup_data] フォールバック: 最古実績日 {start_date} を起点に使用")
 
     # イベント情報取得
     countdown = calc_countdown(event_master=event_master)

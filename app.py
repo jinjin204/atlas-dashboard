@@ -740,7 +740,7 @@ elif selection == "📊 BI Dashboard":
     # ==========================
     # バーンアップチャート
     # ==========================
-    burnup = calc_burnup_data(master_data)
+    burnup = calc_burnup_data(master_data, excel_bytes=st.session_state.get('excel_bytes'))
     if burnup and burnup['actual']:
         st.markdown("#### 📈 目標 vs 実績 フィーバーチャート")
 
