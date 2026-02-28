@@ -416,8 +416,15 @@ def _load_history_summary():
     """
     path = os.path.join(DATA_DIR, 'history_summary.json')
 
-    # 1. ローカルファイルがあればそれを使用
-    if os.path.exists(path):
+    # クラウド環境（Streamlit Cloud）かどうかを判定し、クラウドなら常にDriveから最新を取得
+    try:
+        from logic.drive_utils import _is_cloud
+        is_cloud = _is_cloud()
+    except Exception:
+        is_cloud = False
+
+    # 1. ローカル環境時のみ、ローカルファイルがあればそれを使用
+    if not is_cloud and os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -562,23 +569,16 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
     if not history or not master_data:
         return None
 
-    # master_data から ID→price のマップと平均単価を作成
+    # master_data から ID→price のマップを作成
     price_map = {}
-    total_price_sum = 0
-    price_count = 0
     for item in master_data:
         item_id = item.get('id', '')
         price = item.get('price', 0)
         if item_id and price > 0:
             price_map[item_id] = price
-            total_price_sum += price
-            price_count += 1
-    # details無しエントリ用の平均単価（フォールバック推定に使用）
-    avg_price = total_price_sum / price_count if price_count > 0 else 0
 
-    # 全履歴エントリから各日の完成金額を算出
-    # - details付き: count × price で正確に算出
-    # - details無し: total_current × 平均単価で推定
+    # 履歴エントリからの完成金額算出（正確な生産金額のみ）
+    # ダミーデータ排除のため、details情報の「総生産個数」概算推測は実施しない
     daily_data = {}  # {date_str: revenue}
 
     for entry in history:
@@ -598,23 +598,19 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
         date_str = dt.strftime('%Y-%m-%d')
 
         details = entry.get('details')
+        # detailsが無い古い履歴はグラフにプロットしない（確実に一致するrevenueのみ採用）
         if details:
-            # details付き: 各ID × price で正確にrevenue算出
             revenue = 0
+            has_valid_item = False
             for item_id, item_data in details.items():
                 count = item_data.get('count', 0)
                 price = price_map.get(item_id, 0)
+                if price > 0:
+                    has_valid_item = True
                 revenue += count * price
-            # 同日の最新データで上書き
+            
+            # 該当日の最新レコードで上書き（TEST-001などの有効アイテム0のエントリはrevenue=0になる）
             daily_data[date_str] = revenue
-        else:
-            # details無し: total_current × 平均単価で推定
-            total_current = entry.get('total_current', 0)
-            if total_current and total_current > 0 and avg_price > 0:
-                estimated_revenue = int(total_current * avg_price)
-                # details付きデータがある場合はそちらを優先（上書きしない）
-                if date_str not in daily_data:
-                    daily_data[date_str] = estimated_revenue
 
     if not daily_data:
         return None

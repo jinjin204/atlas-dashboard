@@ -29,9 +29,16 @@ ATLAS_LOG_DRIVE_ID = "1N9Rmg3z_Iohvrpd5QPtVSvstozuOYp0117PSVjUKq-U"
 
 def _is_cloud():
     """ローカル環境かクラウド環境かを判定する"""
-    src_dir = 'PM_Strategic Mind & Pipeline'
-    return not (os.path.exists(os.path.join(os.path.expanduser('~'), '.gemini', src_dir)) or os.path.exists(src_dir))
-
+    if os.path.exists(TOKEN_FILE) or os.path.exists(CREDENTIALS_FILE):
+        return False
+    
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "google_oauth" in st.secrets:
+            return True
+    except Exception:
+        pass
+    return False
 
 def _authenticate_cloud():
     """
