@@ -540,6 +540,51 @@ def build_system_prompt(master_data: list, inventory_df: pd.DataFrame = None, cu
     # --- 本日の成果 ---
     achievements_str = get_daily_achievements()
 
+    # --- ★ カレンダー空き時間 & Google Tasks の読み込み ---
+    calendar_context = ""
+    tasks_context = ""
+    cal_data_path = os.path.join(DATA_DIR, 'atlas_integrated_data.json')
+    if os.path.exists(cal_data_path):
+        try:
+            with open(cal_data_path, 'r', encoding='utf-8') as f:
+                cal_data = json.load(f)
+            
+            # 直近1週間の日別空き時間を抽出
+            daily_schedule = cal_data.get('daily_schedule', [])
+            if daily_schedule:
+                today_date = now.strftime('%Y-%m-%d')
+                week_slots = []
+                for slot in daily_schedule[:7]:  # 直近7日分
+                    d = slot.get('date', '')
+                    if d < today_date:
+                        continue
+                    dow = slot.get('day_of_week', '?')
+                    free_h = slot.get('total_free_hours', 0)
+                    blocked = slot.get('is_blocked', False)
+                    blocks = slot.get('free_blocks', [])
+                    
+                    if blocked:
+                        week_slots.append(f"  {d}({dow}): ■終日ブロック（予定あり）")
+                    else:
+                        block_str = ', '.join([f"{b['start']}-{b['end']}({b['hours']}h)" for b in blocks[:4]])
+                        week_slots.append(f"  {d}({dow}): 空き{free_h}h [{block_str}]")
+                
+                if week_slots:
+                    calendar_context = "\n".join(week_slots)
+            
+            # Google Tasks（期日付き）
+            google_tasks = cal_data.get('google_tasks', [])
+            if google_tasks:
+                task_lines = []
+                for t in google_tasks[:10]:
+                    days_until = t.get('days_until')
+                    urgency = '🚨' if days_until is not None and days_until <= 3 else '📋'
+                    days_label = f"あと{days_until}日" if days_until is not None else '期日不明'
+                    task_lines.append(f"  {urgency} {t['title']} — 期日: {t.get('due_date', '?')} ({days_label})")
+                tasks_context = "\n".join(task_lines)
+        except Exception as e:
+            logger.error(f"カレンダーデータ読み込みエラー: {e}")
+
     # --- ★ event_master.json を Raw JSON として流し込み（加工禁止） ---
     if not event_master:
         event_master = load_event_master()
@@ -599,6 +644,12 @@ def build_system_prompt(master_data: list, inventory_df: pd.DataFrame = None, cu
 
 5. 呼称: ユーザーを必ず「yjing」と呼べ。「アトラス」はアプリ名である。
 
+6. カレンダー連携スケジュール提案（重要！）:
+   - 下記「カレンダー空き時間」セクションのデータと、各商品の加工時間マスタを照らし合わせよ。
+   - その日の空き枠にジャストフィットする具体的な作業（NC放置と手作業の組み合わせ）を提案せよ。
+   - 例: 「明日は9:00-13:00に4時間の空きがある。NCにロト剣本体の粗削り(110分)をセットし、その間に伝説剣の鞘ヤスリがけ(40分×2個)を進めれば、4時間枠を最大活用できる。」
+   - NCは無人運転可能であることを考慮し、NC加工中に手作業を並行する提案を優先せよ。
+
 
 【ユーザーの関心事項（検索結果）】
 {search_context if search_context else "（特になし。全体を見て回答せよ）"}
@@ -614,6 +665,12 @@ def build_system_prompt(master_data: list, inventory_df: pd.DataFrame = None, cu
 ```json
 {event_raw_json}
 ```
+
+## カレンダー空き時間（直近1週間の日別実質空き）
+{calendar_context if calendar_context else '（カレンダーデータ未取得。scripts/calendar_sync.py を実行せよ）'}
+
+## Google Tasks（期日付きタスク）
+{tasks_context if tasks_context else '（期日付きタスクなし）'}
 
 ## 禁止事項
 - 冗長な挨拶や前置きは省略せよ。「お疲れ様です」不要。いきなり本題に入れ。

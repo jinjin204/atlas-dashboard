@@ -291,6 +291,60 @@ with st.sidebar:
     # --- イベント情報 (自動合算) ---
     st.info("ℹ️ イベントマスタ設定に基づき、アクティブな全イベントの目標を合算しています")
 
+    # --- イベント応募ステータス管理 ---
+    event_master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'event_master.json')
+    if os.path.exists(event_master_path):
+        try:
+            with open(event_master_path, 'r', encoding='utf-8') as f:
+                event_list = json.load(f)
+            
+            if event_list:
+                st.markdown("### 📝 イベント応募状況")
+                changed = False
+                for i, evt in enumerate(event_list):
+                    evt_name = evt.get('name', '不明')
+                    deadline = evt.get('deadline', '')
+                    is_applied = evt.get('is_applied', False)
+                    
+                    # 締切情報のラベル
+                    deadline_label = ""
+                    if deadline:
+                        try:
+                            from datetime import datetime as dt_cls
+                            dl = dt_cls.strptime(str(deadline).split(' ')[0], '%Y-%m-%d')
+                            days_left = (dl - datetime.now()).days
+                            if days_left < 0:
+                                deadline_label = f" 🚨 締切超過{abs(days_left)}日"
+                            elif days_left == 0:
+                                deadline_label = " 🔴 本日締切！"
+                            elif days_left <= 3:
+                                deadline_label = f" 🟠 締切まで{days_left}日"
+                            else:
+                                deadline_label = f" 📅 締切: {deadline.split(' ')[0]}"
+                        except Exception:
+                            deadline_label = f" 📅 {deadline}"
+                    
+                    label = f"✅ {evt_name}" if is_applied else f"⬜ {evt_name}{deadline_label}"
+                    new_val = st.checkbox(
+                        label,
+                        value=is_applied,
+                        key=f"applied_{i}_{evt_name}",
+                    )
+                    if new_val != is_applied:
+                        event_list[i]['is_applied'] = new_val
+                        changed = True
+                
+                if changed:
+                    try:
+                        with open(event_master_path, 'w', encoding='utf-8') as f:
+                            json.dump(event_list, f, ensure_ascii=False, indent=2)
+                        st.success("✅ 応募ステータスを保存しました")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"保存エラー: {e}")
+        except Exception:
+            pass
+
     st.divider()
     if st.button("🔄 最新データに更新", use_container_width=True, help="Driveから最新のメニュー.xlsxを再取得します"):
         try:
