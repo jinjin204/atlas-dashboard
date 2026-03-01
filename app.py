@@ -703,6 +703,107 @@ elif selection == "📊 BI Dashboard":
         st.stop()
 
     # ==========================
+    # カレンダー統合データ読み込み（atlas_integrated_data.json）
+    # ==========================
+    calendar_data = {}
+    cal_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'atlas_integrated_data.json')
+    if os.path.exists(cal_data_path):
+        try:
+            with open(cal_data_path, 'r', encoding='utf-8') as f:
+                calendar_data = json.load(f)
+        except Exception:
+            pass
+
+    # ==========================
+    # 🚨 Google Tasks アラート（期日付きタスク）
+    # ==========================
+    google_tasks = calendar_data.get('google_tasks', [])
+    if google_tasks:
+        # 期日が7日以内のタスクを警告表示
+        urgent_tasks = [t for t in google_tasks if t.get('days_until') is not None and t['days_until'] <= 7]
+        upcoming_tasks = [t for t in google_tasks if t.get('days_until') is not None and 7 < t['days_until'] <= 30]
+
+        if urgent_tasks:
+            for t in urgent_tasks:
+                days = t['days_until']
+                if days < 0:
+                    emoji = "🚨"
+                    label = f"期限超過 {abs(days)}日"
+                elif days == 0:
+                    emoji = "🔴"
+                    label = "本日期限"
+                elif days <= 3:
+                    emoji = "🟠"
+                    label = f"あと{days}日"
+                else:
+                    emoji = "🟡"
+                    label = f"あと{days}日"
+                st.markdown(f"""
+                <div class="bi-card bi-ng" style="padding: 0.8rem 1.2rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 1.5rem;">{emoji}</span>
+                        <div>
+                            <div style="color: #fff; font-weight: 700; font-size: 1rem;">{t['title']}</div>
+                            <div style="color: #ff8a80; font-size: 0.8rem;">{label} | 期日: {t['due_date']} | {t.get('task_list', '')}</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        if upcoming_tasks:
+            with st.expander(f"📋 今後のタスク ({len(upcoming_tasks)}件)", expanded=False):
+                for t in upcoming_tasks:
+                    st.markdown(f"- **{t['title']}** — 期日: {t['due_date']} (あと{t['days_until']}日) [{t.get('task_list', '')}]")
+
+        st.divider()
+
+    # ==========================
+    # ⚔️ 軍師の提案（アグレッシブスケジュール）
+    # ==========================
+    suggestions = calendar_data.get('aggressive_suggestions', [])
+    if suggestions:
+        st.markdown("#### ⚔️ 軍師の限界突破スケジュール提案")
+        st.caption("カレンダーの隙間を突いた攻めの生産計画。あえて無茶な提案をし、マスターデータの精緻化を促します。")
+
+        for sg in suggestions:
+            sg_type = sg.get('type', '')
+            priority = sg.get('priority', 3)
+
+            # 優先度に応じたカードスタイル
+            if priority == 1:
+                card_cls = "bi-alert"
+            elif priority == 2:
+                card_cls = "bi-countdown"
+            else:
+                card_cls = "bi-card"
+
+            st.markdown(f"""
+            <div class="bi-card {card_cls}" style="padding: 0.8rem 1.2rem;">
+                <div style="color: #fff; font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem;">
+                    {sg['message']}
+                </div>
+                <div style="color: #a0d2db; font-size: 0.8rem; margin-bottom: 0.3rem;">
+                    💪 効果: {sg['impact']}
+                </div>
+                <div style="color: #ffd93d; font-size: 0.75rem; font-style: italic;">
+                    {sg['nudge']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ナッジメッセージ（マスターデータ精緻化の促進）
+        st.info(
+            "💡 **軍師からの助言:** 上記の提案は「カレンダーに登録された予定」のみを基に算出しています。\n\n"
+            "以下の情報をGoogleカレンダーに入力すると、提案の精度が飛躍的に向上します:\n"
+            "- 🏠 家族の予定（子供の送迎、習い事、通院など）\n"
+            "- 🛒 買い出し・用事の時間\n"
+            "- 🚗 移動時間\n"
+            "- 🍽️ 食事・休憩時間\n\n"
+            "**カレンダーが精緻であるほど、軍師の提案は現実的になります。**"
+        )
+        st.divider()
+
+    # ==========================
     # KPI 1: カウントダウン
     # ==========================
     countdown = calc_countdown()

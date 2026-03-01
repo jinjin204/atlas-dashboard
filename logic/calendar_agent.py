@@ -22,6 +22,7 @@ from google.auth.transport.requests import Request
 CALENDAR_SCOPES = [
     'https://www.googleapis.com/auth/calendar.readonly',
     'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/tasks.readonly',
 ]
 LOOK_AHEAD_DAYS = 90  # 3ヶ月分
 WORK_START_HOUR = 9    # 作業可能時間帯の開始
@@ -151,10 +152,19 @@ def fetch_calendar_events(creds, days=LOOK_AHEAD_DAYS):
         cal_id = cal['id']
         cal_summary = cal.get('summary', cal_id)
         
-        # プライマリカレンダーと自分が所有するカレンダーのみ
-        access_role = cal.get('accessRole', '')
-        if access_role not in ('owner', 'writer'):
+        # Google自動生成カレンダー（祝日・誕生日等）は除外
+        if '#holiday@group.v.calendar.google.com' in cal_id:
+            print(f"[calendar_agent] スキップ（祝日カレンダー）: {cal_summary}")
             continue
+        if '#contacts@group.v.calendar.google.com' in cal_id:
+            print(f"[calendar_agent] スキップ（誕生日カレンダー）: {cal_summary}")
+            continue
+        if '#weather@group.v.calendar.google.com' in cal_id:
+            print(f"[calendar_agent] スキップ（天気カレンダー）: {cal_summary}")
+            continue
+        
+        access_role = cal.get('accessRole', '')
+        print(f"[calendar_agent] 取得対象: {cal_summary} (role={access_role})")
         
         try:
             events_result = service.events().list(
@@ -444,6 +454,219 @@ def upload_to_drive(creds, data, folder_id=OUTPUT_FOLDER_ID, filename=OUTPUT_FIL
 
 
 # ================================================================
+# Google Tasks API 統合
+# ================================================================
+def fetch_google_tasks(creds):
+    """
+    Google Tasks API から期日付きタスクを取得する。
+    
+    Returns:
+        list[dict]: 各タスク {'title', 'due', 'notes', 'status', 'task_list'}
+    """
+    try:
+        service = build('tasks', 'v1', credentials=creds)
+    except Exception as e:
+        print(f"[calendar_agent] Tasks API 初期化エラー: {e}")
+        return []
+    
+    tasks = []
+    JST = timezone(timedelta(hours=9))
+    now = datetime.now(JST)
+    
+    try:
+        # 全タスクリストを取得
+        tasklists = service.tasklists().list(maxResults=100).execute()
+        
+        for tl in tasklists.get('items', []):
+            tl_id = tl['id']
+            tl_title = tl.get('title', '無題リスト')
+            
+            try:
+                tasks_result = service.tasks().list(
+                    tasklist=tl_id,
+                    showCompleted=False,
+                    showHidden=False,
+                    maxResults=100,
+                ).execute()
+                
+                for task in tasks_result.get('items', []):
+                    due = task.get('due', '')
+                    if not due:
+                        continue  # 期日なしタスクはスキップ
+                    
+                    # 期日をパース（RFC 3339形式: "2026-03-15T00:00:00.000Z"）
+                    try:
+                        due_dt = datetime.fromisoformat(due.replace('Z', '+00:00'))
+                        due_jst = due_dt.astimezone(JST)
+                        days_until = (due_jst.date() - now.date()).days
+                    except (ValueError, TypeError):
+                        days_until = None
+                    
+                    tasks.append({
+                        'title': task.get('title', '(無題)'),
+                        'due': due,
+                        'due_date': due_jst.strftime('%Y-%m-%d') if days_until is not None else due[:10],
+                        'days_until': days_until,
+                        'notes': task.get('notes', ''),
+                        'status': task.get('status', 'needsAction'),
+                        'task_list': tl_title,
+                    })
+            except Exception as e:
+                print(f"[calendar_agent] タスクリスト '{tl_title}' 取得エラー: {e}")
+                continue
+    except Exception as e:
+        print(f"[calendar_agent] Tasks API エラー: {e}")
+        return []
+    
+    # 期日が近い順にソート
+    tasks.sort(key=lambda t: t.get('days_until', 9999) if t.get('days_until') is not None else 9999)
+    
+    print(f"[calendar_agent] 取得タスク数: {len(tasks)} (期日付きのみ)")
+    return tasks
+
+
+# ================================================================
+# アグレッシブ提案エンジン（軍師モード）
+# ================================================================
+def generate_aggressive_suggestions(free_slots, production_data=None):
+    """
+    カレンダーの空き時間を分析し、アグレッシブな「限界突破」スケジュール提案を生成する。
+    あえて無茶な提案をすることで、マスターデータの精緻化（家族の予定入力等）を促す。
+    
+    Args:
+        free_slots: calculate_free_slots の出力
+        production_data: production_master.json の内容（残数が多い商品の提案に使用）
+    
+    Returns:
+        list[dict]: 提案リスト
+        [
+            {
+                'type': str,          # 'early_morning' | 'weekend_extend' | 'gap_slot' | 'nc_setup'
+                'message': str,       # 主提案メッセージ
+                'impact': str,        # 効果の説明
+                'date': str,          # 対象日
+                'nudge': str,         # マスター精緻化を促すナッジメッセージ
+                'priority': int,      # 1=高 3=低
+            }
+        ]
+    """
+    JST = timezone(timedelta(hours=9))
+    today = datetime.now(JST).date()
+    suggestions = []
+    
+    # 残り生産量が多い商品を特定（提案文に使用）
+    top_remaining_item = None
+    if production_data:
+        remaining_items = [(p.get('name', '?'), p.get('remaining', 0)) for p in production_data if p.get('remaining', 0) > 0]
+        remaining_items.sort(key=lambda x: x[1], reverse=True)
+        if remaining_items:
+            top_remaining_item = remaining_items[0][0]
+    
+    for slot in free_slots:
+        d = slot['date']
+        try:
+            slot_date = datetime.strptime(d, '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        
+        # 過去の日付はスキップ
+        if slot_date < today:
+            continue
+        
+        # 7日先までのみ提案（直近のアクションに集中）
+        days_ahead = (slot_date - today).days
+        if days_ahead > 7:
+            continue
+        
+        day_of_week = slot['day_of_week']
+        is_weekend = day_of_week in ('土', '日')
+        free_blocks = slot.get('free_blocks', [])
+        total_free = slot.get('total_free_hours', 0)
+        events = slot.get('events', [])
+        is_blocked = slot.get('is_blocked', False)
+        
+        if is_blocked:
+            continue
+        
+        # ===== 提案1: 早朝隙間（6:00-9:00）の活用 =====
+        # イベントが朝9時以降に開始する場合、出勤前の時間を提案
+        has_morning_event = any(
+            e.get('start', '99:99') < '09:00' and e.get('start', '00:00') >= '06:00'
+            for e in events if e.get('start') != '終日'
+        )
+        if not has_morning_event and not is_weekend and events:
+            # 平日で朝の予定がない場合
+            item_name = top_remaining_item or '大物商品'
+            suggestions.append({
+                'type': 'nc_setup',
+                'message': f'⏰ {d}（{day_of_week}）出勤前の45分で NCマシンのセットアップを完了させよ！'
+                           f' 仕事中に{item_name}の粗削りを無人運転で完了できる。',
+                'impact': f'出勤前15分の段取りで、日中3〜4時間分のNC加工を無人で進行可能',
+                'date': d,
+                'nudge': '📝 出勤時間をカレンダーに登録すると、この提案の精度が上がります',
+                'priority': 1,
+            })
+        
+        # ===== 提案2: 週末予定なし → 稼働時間延長 =====
+        if is_weekend and total_free >= 10 and len(events) <= 1:
+            suggestions.append({
+                'type': 'weekend_extend',
+                'message': f'🔥 {d}（{day_of_week}）は予定がほぼ空いています！'
+                           f' 稼働時間を朝8時〜夜22時（14時間）にすれば、目標ペースを一気に巻き返せます。',
+                'impact': f'空き時間 {total_free}h を最大活用。NC2台並行稼働 + 手作業で3〜4製品を同時進行',
+                'date': d,
+                'nudge': '📝 家族の予定・買い出しの時間をカレンダーに入れると、実使用可能な時間がわかります',
+                'priority': 1,
+            })
+        
+        # ===== 提案3: 会議間の隙間30分以上 → 手作業 =====
+        for block in free_blocks:
+            try:
+                hours = block.get('hours', 0)
+                block_start = block.get('start', '')
+                block_end = block.get('end', '')
+            except (ValueError, TypeError):
+                continue
+            
+            if 0.5 <= hours <= 2.0 and not is_weekend:
+                suggestions.append({
+                    'type': 'gap_slot',
+                    'message': f'⚡ {d}（{day_of_week}）{block_start}〜{block_end}に{hours}時間の隙間あり！'
+                               f' ヤスリがけ・組み立て等の手作業を詰め込めます。',
+                    'impact': f'{int(hours * 60)}分あれば、2〜3個の仕上げ作業が可能',
+                    'date': d,
+                    'nudge': '📝 移動時間・準備時間をマスタデータに追加すると、より現実的な提案になります',
+                    'priority': 2,
+                })
+        
+        # ===== 提案4: 平日夜の稼働延長 (20:00-23:00) =====
+        if not is_weekend and total_free >= 3:
+            has_late_event = any(
+                e.get('end', '00:00') > '20:00'
+                for e in events if e.get('start') != '終日'
+            )
+            if not has_late_event:
+                suggestions.append({
+                    'type': 'night_extend',
+                    'message': f'🌙 {d}（{day_of_week}）夜20時以降は予定なし。'
+                               f' 手作業（ヤスリ・組立）なら騒音を気にせず23時まで延長可能。',
+                    'impact': '追加3時間で仕上げ系の作業を5〜6個進められる',
+                    'date': d,
+                    'nudge': '📝 「NC稼働可能時間」「手作業可能時間」を分けてマスタに記録すると、夜間提案の精度が上がります',
+                    'priority': 3,
+                })
+    
+    # 優先度でソート
+    suggestions.sort(key=lambda s: (s['priority'], s['date']))
+    
+    # 最大10件に制限
+    suggestions = suggestions[:10]
+    
+    print(f"[calendar_agent] 生成提案数: {len(suggestions)}")
+    return suggestions
+
+
+# ================================================================
 # メインエントリーポイント
 # ================================================================
 def run(output_local=True, output_drive=True):
@@ -452,8 +675,10 @@ def run(output_local=True, output_drive=True):
     
     1. Google Calendar から予定を取得
     2. 空き時間を算出
-    3. 商品スケジュールと統合
-    4. atlas_integrated_data.json を出力
+    3. Google Tasks から期日付きタスクを取得
+    4. アグレッシブ提案を生成
+    5. 商品スケジュールと統合
+    6. atlas_integrated_data.json を出力
     """
     print("=" * 50)
     print("[calendar_agent] Atlas Calendar Agent 起動")
@@ -474,13 +699,30 @@ def run(output_local=True, output_drive=True):
     print("[calendar_agent] Step 2: 空き時間を算出中...")
     free_slots = calculate_free_slots(events)
     
-    # 4. 商品スケジュールとの統合
-    print("[calendar_agent] Step 3: 商品スケジュールと統合中...")
+    # 4. Google Tasks 取得
+    print("[calendar_agent] Step 3: Google Tasks取得中...")
+    google_tasks = []
+    try:
+        google_tasks = fetch_google_tasks(creds)
+    except Exception as e:
+        print(f"[calendar_agent] ⚠️ Tasks取得スキップ（スコープ未認可の可能性）: {e}")
+    
+    # 5. 商品スケジュールとの統合
+    print("[calendar_agent] Step 4: 商品スケジュールと統合中...")
     base_dir = os.path.dirname(os.path.abspath(__file__))
     production_path = os.path.join(base_dir, '..', 'data', 'production_master.json')
     integrated = integrate_with_production(free_slots, production_path)
     
-    # 5. ローカル出力
+    # 6. アグレッシブ提案生成
+    print("[calendar_agent] Step 5: アグレッシブ提案を生成中...")
+    production_data = integrated.get('production_master', [])
+    suggestions = generate_aggressive_suggestions(free_slots, production_data)
+    
+    # 統合データに追加
+    integrated['google_tasks'] = google_tasks
+    integrated['aggressive_suggestions'] = suggestions
+    
+    # 7. ローカル出力
     if output_local:
         local_path = os.path.join(base_dir, '..', 'data', OUTPUT_FILENAME)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
@@ -488,9 +730,9 @@ def run(output_local=True, output_drive=True):
             json.dump(integrated, f, ensure_ascii=False, indent=2)
         print(f"[calendar_agent] ✅ ローカル出力: {local_path}")
     
-    # 6. Drive出力
+    # 8. Drive出力
     if output_drive:
-        print("[calendar_agent] Step 4: Google Driveへアップロード中...")
+        print("[calendar_agent] Step 6: Google Driveへアップロード中...")
         try:
             upload_to_drive(creds, integrated)
         except Exception as e:
@@ -504,6 +746,8 @@ def run(output_local=True, output_drive=True):
     print(f"  ブロック日数: {s['blocked_days']} 日")
     print(f"  作業可能日数: {s['available_work_days']} 日")
     print(f"  平均空き時間/日: {s['avg_free_hours_per_day']} 時間")
+    print(f"  期日付きタスク: {len(google_tasks)} 件")
+    print(f"  アグレッシブ提案: {len(suggestions)} 件")
     print("=" * 50)
     
     return integrated
