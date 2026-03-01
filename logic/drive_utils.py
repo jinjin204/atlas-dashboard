@@ -26,6 +26,7 @@ LOG_FILE_MIME = "application/vnd.google-apps.spreadsheet"
 # --- Phase 1: クラウド同期対象ファイルのDrive ID ---
 HISTORY_SUMMARY_DRIVE_ID = "1LTM58WGFT27DpEZ_1TPBeQiJcSr6-uRT"
 ATLAS_LOG_DRIVE_ID = "1N9Rmg3z_Iohvrpd5QPtVSvstozuOYp0117PSVjUKq-U"
+EVENT_MASTER_DRIVE_ID = "1VrxYt_HpJflPNmp-UU39wXtbDXSsQ5Dk"
 
 def _is_cloud():
     """ローカル環境かクラウド環境かを判定する"""

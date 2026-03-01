@@ -293,6 +293,23 @@ with st.sidebar:
 
     # --- イベント応募ステータス管理 ---
     event_master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'event_master.json')
+    
+    # クラウド環境でローカルにファイルがない場合、Driveから復元
+    if not os.path.exists(event_master_path):
+        try:
+            from logic.drive_utils import authenticate as _auth, download_content, EVENT_MASTER_DRIVE_ID
+            if EVENT_MASTER_DRIVE_ID:
+                _svc = _auth()
+                if _svc:
+                    _stream = download_content(_svc, EVENT_MASTER_DRIVE_ID, 'application/json')
+                    if _stream:
+                        os.makedirs(os.path.dirname(event_master_path), exist_ok=True)
+                        with open(event_master_path, 'wb') as f:
+                            f.write(_stream.read())
+                        print("[app] ✅ Driveからevent_master.jsonを復元")
+        except Exception as e:
+            print(f"[app] event_master復元スキップ: {e}")
+    
     if os.path.exists(event_master_path):
         try:
             with open(event_master_path, 'r', encoding='utf-8') as f:
@@ -338,7 +355,21 @@ with st.sidebar:
                     try:
                         with open(event_master_path, 'w', encoding='utf-8') as f:
                             json.dump(event_list, f, ensure_ascii=False, indent=2)
-                        st.success("✅ 応募ステータスを保存しました")
+                        
+                        # Drive同期（ローカル環境のみ実行。クラウドは_is_cloud()ガードで自動スキップ）
+                        try:
+                            from logic.drive_utils import upload_to_drive, EVENT_MASTER_DRIVE_ID
+                            if upload_to_drive and EVENT_MASTER_DRIVE_ID:
+                                _ok, _msg = upload_to_drive(event_master_path, EVENT_MASTER_DRIVE_ID)
+                                if _ok:
+                                    st.success("✅ 応募ステータスを保存 & Drive同期しました")
+                                else:
+                                    st.warning(f"⚠️ ローカル保存OK、Drive同期失敗: {_msg}")
+                            else:
+                                st.success("✅ 応募ステータスを保存しました")
+                        except ImportError:
+                            st.success("✅ 応募ステータスを保存しました（Drive同期なし）")
+                        
                         st.rerun()
                     except Exception as e:
                         st.error(f"保存エラー: {e}")

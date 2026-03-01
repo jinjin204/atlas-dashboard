@@ -164,15 +164,16 @@ def convert_dataframe_to_json(df, force=False, excel_bytes=None):
 # --- Drive連携用インポート ---
 try:
     from logic import drive_utils
-    from logic.drive_utils import upload_to_drive, HISTORY_SUMMARY_DRIVE_ID
+    from logic.drive_utils import upload_to_drive, HISTORY_SUMMARY_DRIVE_ID, EVENT_MASTER_DRIVE_ID
 except ImportError:
     try:
         import drive_utils
-        from drive_utils import upload_to_drive, HISTORY_SUMMARY_DRIVE_ID
+        from drive_utils import upload_to_drive, HISTORY_SUMMARY_DRIVE_ID, EVENT_MASTER_DRIVE_ID
     except ImportError:
         drive_utils = None
         upload_to_drive = None
         HISTORY_SUMMARY_DRIVE_ID = None
+        EVENT_MASTER_DRIVE_ID = None
 
 
 def sync_from_drive():
@@ -577,10 +578,50 @@ def merge_event_targets(master_list, excel_bytes, _unused_sheet_name=None):
                 
                 # --- Zeus監視用データの保存 (event_master.json) ---
                 event_json_path = os.path.join(DATA_DIR, 'event_master.json')
+                
+                # ★ 既存のis_appliedフラグを保持する
+                existing_applied = {}
+                if os.path.exists(event_json_path):
+                    try:
+                        with open(event_json_path, 'r', encoding='utf-8') as f:
+                            old_events = json.load(f)
+                        for oe in old_events:
+                            key = oe.get('name', '')
+                            if key and 'is_applied' in oe:
+                                existing_applied[key] = oe['is_applied']
+                    except Exception:
+                        pass
+                else:
+                    # ローカルにない場合、Driveから復元を試みる
+                    if drive_utils and EVENT_MASTER_DRIVE_ID:
+                        try:
+                            svc = drive_utils.authenticate()
+                            if svc:
+                                stream = drive_utils.download_content(svc, EVENT_MASTER_DRIVE_ID, 'application/json')
+                                if stream:
+                                    old_events = json.loads(stream.read().decode('utf-8'))
+                                    for oe in old_events:
+                                        key = oe.get('name', '')
+                                        if key and 'is_applied' in oe:
+                                            existing_applied[key] = oe['is_applied']
+                                    logger.info("✅ Driveからevent_master.jsonのis_appliedフラグを復元")
+                        except Exception as e:
+                            logger.warning(f"Driveからのevent_master復元失敗: {e}")
+                
+                # is_appliedフラグをマージ
+                for evt in display_events:
+                    evt_name = evt.get('name', '')
+                    evt['is_applied'] = existing_applied.get(evt_name, False)
+                
                 try:
                     with open(event_json_path, 'w', encoding='utf-8') as f:
                         json.dump(display_events, f, indent=2, ensure_ascii=False)
                     logger.info(f"監視イベントリスト保存完了: {event_json_path}")
+                    
+                    # --- Drive同期 ---
+                    if upload_to_drive and EVENT_MASTER_DRIVE_ID:
+                        _ok, _msg = upload_to_drive(event_json_path, EVENT_MASTER_DRIVE_ID)
+                        logger.info(f"[Drive同期] event_master.json: {_msg}")
                 except Exception as e:
                     logger.error(f"監視イベントリスト保存失敗: {e}")
 
