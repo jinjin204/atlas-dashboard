@@ -251,6 +251,19 @@ with st.sidebar.expander("🛠️ Debug Information"):
 # --- イベント目標のマージ (自動合算) は convert_dataframe_to_json 内で実行済み ---
 # (以前の明示的な呼び出しコードは削除されました)
 
+# --- Calendar & Tasks Data Loading (Zeus Aggressive Suggestions) ---
+@st.cache_data(ttl=3600)
+def fetch_and_cache_calendar_data():
+    try:
+        from logic.calendar_agent import run as run_calendar_agent
+        # Drive同期は不要、ローカル（エフェメラル）へのJSON出力を有効にして既存ロジックと互換性を保つ
+        return run_calendar_agent(output_local=True, output_drive=False)
+    except Exception as e:
+        print(f"Error executing calendar agent: {e}")
+        return {}
+
+calendar_data_cache = fetch_and_cache_calendar_data() or {}
+
 # --- Logic Execution ---
 production_events = []
 inventory_df = pd.DataFrame()
@@ -788,16 +801,9 @@ elif selection == "📊 BI Dashboard":
         st.stop()
 
     # ==========================
-    # カレンダー統合データ読み込み（atlas_integrated_data.json）
+    # カレンダー統合データ読み込み（キャッシュから取得）
     # ==========================
-    calendar_data = {}
-    cal_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'atlas_integrated_data.json')
-    if os.path.exists(cal_data_path):
-        try:
-            with open(cal_data_path, 'r', encoding='utf-8') as f:
-                calendar_data = json.load(f)
-        except Exception:
-            pass
+    calendar_data = calendar_data_cache
 
     # ==========================
     # 🚨 Google Tasks アラート（期日付きタスク）
