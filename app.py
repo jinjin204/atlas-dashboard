@@ -891,8 +891,18 @@ elif selection == "📊 BI Dashboard":
             """, unsafe_allow_html=True)
 
         # ナッジメッセージ（マスターデータ精緻化の促進）
+        # 期限が7日以内のタスクを抽出
+        google_tasks = calendar_data.get('google_tasks', [])
+        urgent_tasks = [t for t in google_tasks if t.get('days_until') is not None and 0 <= t.get('days_until') <= 7]
+        
+        if urgent_tasks:
+            titles = "、".join(set([t.get('title', '無題') for t in urgent_tasks]))
+            nudge_prefix = f"⚠️ **現在、{titles} の期限が迫っておる。これを最優先に組み込んだ提案を上に表示したぞ。**\n\n"
+        else:
+            nudge_prefix = "💡 **軍師からの助言:** 上記の提案は「カレンダーに登録された予定」のみならず「ToDoリストの期限」も考慮して算出しています。\n\n"
+
         st.info(
-            "💡 **軍師からの助言:** 上記の提案は「カレンダーに登録された予定」のみならず「ToDoリストの期限」も考慮して算出しています。\n\n"
+            nudge_prefix +
             "以下の情報をGoogleカレンダーに入力すると、提案の精度が飛躍的に向上します:\n"
             "- 🏠 家族の予定（子供の送迎、習い事、通院など）\n"
             "- 🛒 買い出し・用事の時間\n"
