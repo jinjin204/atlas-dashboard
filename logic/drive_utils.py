@@ -12,6 +12,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/tasks.readonly'
 ]
 CREDENTIALS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
