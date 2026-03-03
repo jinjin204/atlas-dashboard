@@ -752,18 +752,25 @@ def generate_advisor_comment(free_slots, google_tasks):
         today_str = datetime.datetime.now().strftime("%Y年%m月%d日")
 
         # 状況の要約文字列作成
-        context_lines = [f"【今日の日付: {today_str}】"]
+        context_lines = [f"【本日は{today_str}である】"]
         if free_slots:
             context_lines.append("【直近の空き時間枠】")
             for slot in free_slots[:7]: # 直近1週間の空き
                 context_lines.append(f" - {slot['date']} ({slot['day_of_week']}): 空き{slot['total_free_hours']}時間")
         
         if google_tasks:
-            context_lines.append("【取得した全ToDoリスト（30日以内）】")
+            context_lines.append("【現在の未完了タスク一覧:】")
             for t in google_tasks[:30]: # 多く取得
-                context_lines.append(f" - {t.get('title', '無題')} : 期日 {t.get('due_date', '?')} (あと{t.get('days_until', '?')}日)")
+                # 例:「・確定申告 (3/15まで)」形式に
+                due_short = t.get('due_date', '?')
+                if due_short != '?':
+                    try:
+                        due_short = datetime.datetime.strptime(due_short, "%Y-%m-%d").strftime("%m/%d")
+                    except ValueError:
+                        pass
+                context_lines.append(f"・{t.get('title', '無題')} ({due_short}まで)")
         
-        context_str = "\n".join(context_lines) if len(context_lines) > 1 else f"【今日の日付: {today_str}】\n（特にカレンダー上の空きや直近のタスク情報はありませぬ）"
+        context_str = "\n".join(context_lines) if len(context_lines) > 1 else f"【本日は{today_str}である】\n（特にカレンダー上の空きや直近のタスク情報はありませぬ）"
         
         system_instruction = (
             "君は状況を完全に把握した軍師だ。例えば『確定申告』の期限（3/15）まであと11日あるなら、"
@@ -776,6 +783,12 @@ def generate_advisor_comment(free_slots, google_tasks):
         )
 
         prompt = f"現在の状況は以下の通りだ。これをもとに助言を頼む。\n\n{context_str}"
+
+        print("\n--- AI PROMPT START ---")
+        print(system_instruction)
+        print("========")
+        print(prompt)
+        print("--- AI PROMPT END ---\n")
 
         response = client.models.generate_content(
             model='gemini-2.5-flash',
