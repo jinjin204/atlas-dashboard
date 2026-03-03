@@ -747,24 +747,29 @@ def generate_advisor_comment(free_slots, google_tasks):
     try:
         client = genai.Client(api_key=api_key)
         
+        # 今日の日付を明記
+        import datetime
+        today_str = datetime.datetime.now().strftime("%Y年%m月%d日")
+
         # 状況の要約文字列作成
-        context_lines = []
+        context_lines = [f"【今日の日付: {today_str}】"]
         if free_slots:
             context_lines.append("【直近の空き時間枠】")
             for slot in free_slots[:7]: # 直近1週間の空き
                 context_lines.append(f" - {slot['date']} ({slot['day_of_week']}): 空き{slot['total_free_hours']}時間")
         
         if google_tasks:
-            context_lines.append("【期日の迫っているタスク（30日以内）】")
-            for t in google_tasks[:10]: # 上位10件
-                context_lines.append(f" - {t.get('title', '無題')} (あと{t.get('days_until', '?')}日)")
+            context_lines.append("【取得した全ToDoリスト（30日以内）】")
+            for t in google_tasks[:30]: # 多く取得
+                context_lines.append(f" - {t.get('title', '無題')} : 期日 {t.get('due_date', '?')} (あと{t.get('days_until', '?')}日)")
         
-        context_str = "\n".join(context_lines) if context_lines else "（特にカレンダー上の空きや直近のタスク情報はありませぬ）"
+        context_str = "\n".join(context_lines) if len(context_lines) > 1 else f"【今日の日付: {today_str}】\n（特にカレンダー上の空きや直近のタスク情報はありませぬ）"
         
         system_instruction = (
-            "君は軍師Zeusだ。取得したカレンダーの空き時間と、ToDoリスト（タスク名と期限）を読み取り、ユーザーへ一言助言せよ。\n"
-            "期限が遠い場合は『順調だ』と励まし、1週間を切ったら『そろそろ準備を』、3日を切ったら『直ちに完了せよ』といった具合に、残り日数に応じた良識あるトーンで使い分けろ。\n"
-            "「確定申告」などの重要なタスクには具体的に言及すること。\n"
+            "君は状況を完全に把握した軍師だ。例えば『確定申告』の期限（3/15）まであと11日あるなら、"
+            "『まだ余裕はあるが、今のうちに資料をまとめておくと後の製作が楽になるぞ』といった、"
+            "残り日数と製作の忙しさを天秤にかけた現実的なアドバイスをせよ。"
+            "タスク名を出さずに一般論を言うことは厳禁とする。"
             "短く、威厳とユーモアのある日本語で答えよ。\n"
             "末尾に「（追伸：カレンダーを精緻にすると私の予知能力も上がるぞ）」と自然に混ぜ込め。\n"
             "ユーザー名はyjing、不要な挨拶は省略せよ。"
