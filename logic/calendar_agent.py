@@ -11,9 +11,15 @@ import os
 import io
 import json
 from datetime import datetime, timedelta, timezone
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
+    print("[calendar_agent] google-genai library not found. AI Advisor comment generation will be skipped.")
 
 
 # ================================================================
@@ -473,8 +479,8 @@ def fetch_google_tasks(creds):
     JST = timezone(timedelta(hours=9))
     now = datetime.now(JST)
     
-    # 実行時から31日先のタイムスタンプを作成 (Google Tasks API用)
-    time_max = (now + timedelta(days=31)).isoformat()
+    # 実行時から30日先のタイムスタンプを作成 (Google Tasks API用)
+    time_max = (now + timedelta(days=30)).isoformat()
     
     try:
         # 全タスクリストを取得
@@ -710,9 +716,74 @@ def generate_aggressive_suggestions(free_slots, production_data=None, google_tas
     
     # 最大10件に制限
     suggestions = suggestions[:10]
-    
     print(f"[calendar_agent] 生成提案数: {len(suggestions)}")
     return suggestions
+
+# ================================================================
+# AI軍師（Gemini）助言生成
+# ================================================================
+def generate_advisor_comment(free_slots, google_tasks):
+    """
+    空き時間とToDoタスク情報をもとに、Gemini APIを用いて軍師としての助言を生成する。
+    """
+    if not genai:
+        return "⚠️ AI機能（google-genai）がインストールされておらんようだな。"
+        
+    api_key = None
+    # 1. サーバーの環境変数から取得
+    api_key = os.environ.get("GEMINI_API_KEY")
+    
+    # 2. st.secrets からの取得フォールバック
+    if not api_key:
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("GEMINI_API_KEY")
+        except Exception:
+            pass
+            
+    if not api_key:
+        return "⚠️ （Gemini APIキーが設定されていないため、助言を生成できませぬ）"
+
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        # 状況の要約文字列作成
+        context_lines = []
+        if free_slots:
+            context_lines.append("【直近の空き時間枠】")
+            for slot in free_slots[:7]: # 直近1週間の空き
+                context_lines.append(f" - {slot['date']} ({slot['day_of_week']}): 空き{slot['total_free_hours']}時間")
+        
+        if google_tasks:
+            context_lines.append("【期日の迫っているタスク（30日以内）】")
+            for t in google_tasks[:10]: # 上位10件
+                context_lines.append(f" - {t.get('title', '無題')} (あと{t.get('days_until', '?')}日)")
+        
+        context_str = "\n".join(context_lines) if context_lines else "（特にカレンダー上の空きや直近のタスク情報はありませぬ）"
+        
+        system_instruction = (
+            "君は軍師Zeusだ。取得したカレンダーの空き時間と、ToDoリスト（タスク名と期限）を読み取り、ユーザーへ一言助言せよ。\n"
+            "期限が遠い場合は『順調だ』と励まし、1週間を切ったら『そろそろ準備を』、3日を切ったら『直ちに完了せよ』といった具合に、残り日数に応じた良識あるトーンで使い分けろ。\n"
+            "「確定申告」などの重要なタスクには具体的に言及すること。\n"
+            "短く、威厳とユーモアのある日本語で答えよ。\n"
+            "末尾に「（追伸：カレンダーを精緻にすると私の予知能力も上がるぞ）」と自然に混ぜ込め。\n"
+            "ユーザー名はyjing、不要な挨拶は省略せよ。"
+        )
+
+        prompt = f"現在の状況は以下の通りだ。これをもとに助言を頼む。\n\n{context_str}"
+
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7,
+            )
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"[calendar_agent] AI軍師生成エラー: {e}")
+        return "⚠️ （軍師Zeusは現在思考中だ…）"
 
 
 # ================================================================
@@ -770,6 +841,11 @@ def run(output_local=True, output_drive=True):
     # 統合データに追加
     integrated['google_tasks'] = google_tasks
     integrated['aggressive_suggestions'] = suggestions
+    
+    # AI助言生成
+    print("[calendar_agent] Step 5.5: AI軍師からの助言を生成中...")
+    advisor_comment = generate_advisor_comment(free_slots, google_tasks)
+    integrated['advisor_comment'] = advisor_comment
     
     # 7. ローカル出力
     if output_local:
