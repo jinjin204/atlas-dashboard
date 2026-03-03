@@ -546,7 +546,7 @@ def fetch_google_tasks(creds):
 # ================================================================
 # アグレッシブ提案エンジン（軍師モード）
 # ================================================================
-def generate_aggressive_suggestions(free_slots, production_data=None):
+def generate_aggressive_suggestions(free_slots, production_data=None, google_tasks=None):
     """
     カレンダーの空き時間を分析し、アグレッシブな「限界突破」スケジュール提案を生成する。
     あえて無茶な提案をすることで、マスターデータの精緻化（家族の予定入力等）を促す。
@@ -674,6 +674,24 @@ def generate_aggressive_suggestions(free_slots, production_data=None):
                     'priority': 3,
                 })
     
+    # ===== 提案5: 期日直近（3日以内）のタスク =====
+    if google_tasks:
+        for task in google_tasks:
+            try:
+                days_until = task.get('days_until')
+                if days_until is not None and 0 <= days_until <= 3:
+                    title = task.get('title', '無題タスク')
+                    suggestions.append({
+                        'type': 'urgent_task',
+                        'message': f'🚨 期限間近：{title} があと{days_until}日で締め切りです。生産計画を調整し、事務作業の時間を確保せよ！',
+                        'impact': f'期日超過によるペナルティや信用低下を回避',
+                        'date': today.strftime("%Y-%m-%d"),
+                        'nudge': '📝 事務作業や買い出しの期限（Google ToDo）を登録すると、警告の精度が上がります',
+                        'priority': 1,
+                    })
+            except Exception:
+                pass
+    
     # 優先度でソート
     suggestions.sort(key=lambda s: (s['priority'], s['date']))
     
@@ -734,7 +752,7 @@ def run(output_local=True, output_drive=True):
     # 6. アグレッシブ提案生成
     print("[calendar_agent] Step 5: アグレッシブ提案を生成中...")
     production_data = integrated.get('production_master', [])
-    suggestions = generate_aggressive_suggestions(free_slots, production_data)
+    suggestions = generate_aggressive_suggestions(free_slots, production_data, google_tasks)
     
     # 統合データに追加
     integrated['google_tasks'] = google_tasks
