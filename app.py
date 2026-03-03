@@ -891,7 +891,10 @@ elif selection == "📊 BI Dashboard":
             """, unsafe_allow_html=True)
 
         # ナッジメッセージ（マスターデータ精緻化の促進）
-        advisor_comment = calendar_data.get('advisor_comment', "💡 **軍師からの助言:** カレンダーに予定とToDoを入力しておくと、私の予知能力が向上しますぞ。")
+        advisor_comment = calendar_data.get('advisor_comment')
+        if not advisor_comment:
+            advisor_comment = "⚠️ 軍師、思考停止中（AI生成エラー）"
+        
         st.info(advisor_comment)
         st.divider()
 
