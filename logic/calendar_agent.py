@@ -473,6 +473,9 @@ def fetch_google_tasks(creds):
     JST = timezone(timedelta(hours=9))
     now = datetime.now(JST)
     
+    # 実行時から31日先のタイムスタンプを作成 (Google Tasks API用)
+    time_max = (now + timedelta(days=31)).isoformat()
+    
     try:
         # 全タスクリストを取得
         tasklists = service.tasklists().list(maxResults=100).execute()
@@ -487,9 +490,13 @@ def fetch_google_tasks(creds):
                     showCompleted=False,
                     showHidden=False,
                     maxResults=100,
+                    dueMax=time_max  # 31日先まで取得
                 ).execute()
                 
-                for task in tasks_result.get('items', []):
+                items = tasks_result.get('items', [])
+                print(f"[calendar_agent] タスクリスト '{tl_title}' から {len(items)} 件のタスクを取得しました")
+
+                for task in items:
                     due = task.get('due', '')
                     if not due:
                         continue  # 期日なしタスクはスキップ
