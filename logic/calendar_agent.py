@@ -674,21 +674,34 @@ def generate_aggressive_suggestions(free_slots, production_data=None, google_tas
                     'priority': 3,
                 })
     
-    # ===== 提案5: 期日直近（3日以内）のタスク =====
+    # ===== 提案5: 期日直近（3日以内）または特大タスク（7日以内） =====
     if google_tasks:
         for task in google_tasks:
             try:
                 days_until = task.get('days_until')
-                if days_until is not None and 0 <= days_until <= 3:
-                    title = task.get('title', '無題タスク')
-                    suggestions.append({
-                        'type': 'urgent_task',
-                        'message': f'🚨 期限間近：{title} があと{days_until}日で締め切りです。生産計画を調整し、事務作業の時間を確保せよ！',
-                        'impact': f'期日超過によるペナルティや信用低下を回避',
-                        'date': today.strftime("%Y-%m-%d"),
-                        'nudge': '📝 事務作業や買い出しの期限（Google ToDo）を登録すると、警告の精度が上がります',
-                        'priority': 1,
-                    })
+                title = task.get('title', '無題タスク')
+                
+                if days_until is not None:
+                    # 「確定申告」など特別な緊急タスク（7日以内）
+                    if '確定申告' in title and 0 <= days_until <= 7:
+                        suggestions.append({
+                            'type': 'urgent_task_special',
+                            'message': f'🔥 {title} の締切まであと{days_until}日！製作の手を休めてでも、この隙間に事務作業を完了させるのだ。',
+                            'impact': f'最重要ペナルティ回避と手続き完了',
+                            'date': today.strftime("%Y-%m-%d"),
+                            'nudge': '📝 ToDoをカレンダーに登録しておくと、作業漏れを未然に防ぎます',
+                            'priority': 1,
+                        })
+                    # 通常の納期タスク（3日以内）
+                    elif 0 <= days_until <= 3:
+                        suggestions.append({
+                            'type': 'urgent_task',
+                            'message': f'🚨 期限間近：{title} があと{days_until}日で締め切りです。生産計画を調整し、事務作業の時間を確保せよ！',
+                            'impact': f'期日超過によるペナルティや信用低下を回避',
+                            'date': today.strftime("%Y-%m-%d"),
+                            'nudge': '📝 事務作業や買い出しの期限（Google ToDo）を登録すると、警告の精度が上がります',
+                            'priority': 1,
+                        })
             except Exception:
                 pass
     
