@@ -810,41 +810,49 @@ elif selection == "📊 BI Dashboard":
     # ==========================
     google_tasks = calendar_data.get('google_tasks', [])
     if google_tasks:
-        # 期日が7日以内のタスクを警告表示
-        urgent_tasks = [t for t in google_tasks if t.get('days_until') is not None and t['days_until'] <= 7]
-        upcoming_tasks = [t for t in google_tasks if t.get('days_until') is not None and 7 < t['days_until'] <= 30]
+        # 期日が30日以内のタスクを取得
+        display_tasks = [t for t in google_tasks if t.get('days_until') is not None and t['days_until'] <= 30]
+        
+        # 期日が近い順にソート（3日以内などの緊急タスクが上に来るように）
+        display_tasks.sort(key=lambda x: x['days_until'])
 
-        if urgent_tasks:
-            for t in urgent_tasks:
+        if display_tasks:
+            for t in display_tasks:
                 days = t['days_until']
+                
+                # 3日以内または期限切れは警告色（赤）、それ以外は通常色
                 if days < 0:
                     emoji = "🚨"
                     label = f"期限超過 {abs(days)}日"
+                    card_cls = "bi-ng"  # 赤背景
+                    text_color = "#ff8a80"
                 elif days == 0:
                     emoji = "🔴"
                     label = "本日期限"
+                    card_cls = "bi-ng"
+                    text_color = "#ff8a80"
                 elif days <= 3:
                     emoji = "🟠"
                     label = f"あと{days}日"
+                    card_cls = "bi-ng"  # 警告色維持
+                    text_color = "#ff8a80"
                 else:
-                    emoji = "🟡"
+                    emoji = "📅"
                     label = f"あと{days}日"
+                    card_cls = ""  # デフォルト（青系）
+                    text_color = "#a0d2db"
+
                 st.markdown(f"""
-                <div class="bi-card bi-ng" style="padding: 0.8rem 1.2rem;">
+                <div class="bi-card {card_cls}" style="padding: 0.8rem 1.2rem; margin-bottom: 0.5rem;">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <span style="font-size: 1.5rem;">{emoji}</span>
                         <div>
                             <div style="color: #fff; font-weight: 700; font-size: 1rem;">{t['title']}</div>
-                            <div style="color: #ff8a80; font-size: 0.8rem;">{label} | 期日: {t['due_date']} | {t.get('task_list', '')}</div>
+                            <div style="color: {text_color}; font-size: 0.8rem;">{label} | 期日: {t['due_date']} | {t.get('task_list', '')}</div>
                         </div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-        if upcoming_tasks:
-            with st.expander(f"📋 今後のタスク ({len(upcoming_tasks)}件)", expanded=False):
-                for t in upcoming_tasks:
-                    st.markdown(f"- **{t['title']}** — 期日: {t['due_date']} (あと{t['days_until']}日) [{t.get('task_list', '')}]")
 
         st.divider()
 
