@@ -30,16 +30,31 @@ ATLAS_LOG_DRIVE_ID = "1N9Rmg3z_Iohvrpd5QPtVSvstozuOYp0117PSVjUKq-U"
 EVENT_MASTER_DRIVE_ID = "1VrxYt_HpJflPNmp-UU39wXtbDXSsQ5Dk"
 
 def _is_cloud():
-    """ローカル環境かクラウド環境かを判定する"""
+    """
+    ローカル環境かクラウド環境かを判定する。
+    より堅牢に判定するため、ファイルの存在だけでなく実行環境のパスも加味する。
+    """
+    # 物理的な認証ファイルが存在すれば確実にローカル（またはローカル同等の開発環境）
     if os.path.exists(TOKEN_FILE) or os.path.exists(CREDENTIALS_FILE):
         return False
     
+    # 環境変数での判定 (Streamlit Cloudは通常 Linux 系のパスになる)
+    # Windowsパス (C:\ 等) が含まれていればローカルの可能性が高い
+    curr_dir = os.path.dirname(os.path.abspath(__file__))
+    if ":" in curr_dir or "\\" in curr_dir:
+         # ただし絶対的な保証はないため、後続の st.secrets チェックへと進める
+         pass 
+
     try:
         import streamlit as st
-        if hasattr(st, "secrets") and "google_oauth" in st.secrets:
-            return True
+        # Streamlit が動作しており、かつ secrets に google_oauth がある場合のみクラウドとみなす
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        if get_script_run_ctx() is not None:
+             if hasattr(st, "secrets") and "google_oauth" in st.secrets:
+                 return True
     except Exception:
         pass
+        
     return False
 
 def _authenticate_cloud():
@@ -111,20 +126,27 @@ def _authenticate_local():
 def authenticate():
     """
     環境に応じて適切な認証方法を選択する。
-    ローカルの token.json を最優先で試行し、失敗時のみクラウド認証にフォールバック。
+    確実にローカル環境の設定を優先し、意図しないクラウドモードへの移行を防ぐ。
     """
-    # 1. ローカルの token.json が存在すれば最優先で使用
+    # 1. token.json があればローカル認証
     if os.path.exists(TOKEN_FILE):
         print("[authenticate] token.json が存在 → ローカル認証を優先")
         result = _authenticate_local()
         if result:
             return result
-        print("[authenticate] ローカル認証失敗 → クラウド認証にフォールバック")
+        print("[authenticate] ローカル認証 (token.json) 失敗")
 
-    # 2. token.json が無い場合、環境判定してクラウドまたはローカル認証
+    # 2. token.json は無いが credentials.json がある場合は「ローカルの新規認証」とみなす
+    if os.path.exists(CREDENTIALS_FILE):
+        print("[authenticate] credentials.json が存在 → ローカル環境と判定、再認証プロセスへ")
+        return _authenticate_local()
+
+    # 3. どちらのファイルもない場合、環境判定してクラウドまたはローカル認証
     if _is_cloud():
+        print("[authenticate] クラウド環境と判定 → クラウド認証を実行")
         return _authenticate_cloud()
     else:
+        print("[authenticate] 認証用ファイルがなく、クラウド環境でもない → ローカル認証(エラーになる想定)")
         return _authenticate_local()
 
 
