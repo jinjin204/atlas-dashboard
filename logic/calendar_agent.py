@@ -494,11 +494,22 @@ def fetch_google_tasks(creds):
                 ).execute()
                 
                 items = tasks_result.get('items', [])
-                print(f"[calendar_agent] タスクリスト '{tl_title}' から {len(items)} 件のタスクを取得しました")
+                print(f"[calendar_agent] =========================================")
+                print(f"[calendar_agent] タスクリスト '{tl_title}' から {len(items)} 件のRAWタスクを取得しました")
 
                 for task in items:
+                    title = task.get('title', '(無題)')
                     due = task.get('due', '')
+                    
+                    # デバッグ出力（全件表示）
+                    print(f"[calendar_agent]   - タスク確認: title='{title}', due='{due}'")
+                    
+                    # 「確定申告」を含むタスクへの特別なログ
+                    if '確定申告' in title:
+                        print(f"[calendar_agent]   ★確定申告タスク発見★ title='{title}', due='{due}'")
+
                     if not due:
+                        print(f"[calendar_agent]     -> 期日(due)が存在しないためスキップしました")
                         continue  # 期日なしタスクはスキップ
                     
                     # 期日をパース（RFC 3339形式: "2026-03-15T00:00:00.000Z"）
