@@ -801,10 +801,52 @@ def calc_burndown_hours(master_data, event_master=None):
         event_date = ideal_finish_date
         event_name = '不明'
 
+    # --- 6. 売上マイルストーン（Y軸上の目安ライン） ---
+    # 全目標達成時の「初期総作業時間」と「総売上」を算出
+    initial_total_min = 0
+    total_target_revenue = 0
+    for item in master_data:
+        target_qty = item.get('target_quantity', 0)
+        if target_qty <= 0:
+            continue
+        item_id = item.get('id', '')
+        per_unit_min = time_map.get(item_id, 0)
+        initial_total_min += target_qty * per_unit_min
+        price = item.get('price', 0)
+        if price > 0:
+            total_target_revenue += target_qty * price
+
+    initial_total_hours = round(initial_total_min / 60, 1)
+
+    # 売上M円に達した時の残り作業時間（目安）
+    # 線形近似: 残り時間 = 初期総時間 × (1 - M / 総売上)
+    milestones = []
+    MILESTONE_TARGETS = [
+        {"revenue": 600000, "label": "🥉 60万円突破", "color": "#cd7f32"},  # 銅
+        {"revenue": 700000, "label": "🥈 70万円突破", "color": "#c0c0c0"},  # 銀
+        {"revenue": 800000, "label": "🥇 80万円突破", "color": "#ffd700"},  # 金
+    ]
+    if total_target_revenue > 0 and initial_total_hours > 0:
+        for m in MILESTONE_TARGETS:
+            rev = m['revenue']
+            if rev > total_target_revenue:
+                continue  # 目標総売上を超えるマイルストーンはスキップ
+            remaining_h = round(initial_total_hours * (1 - rev / total_target_revenue), 1)
+            if remaining_h >= 0:
+                milestones.append({
+                    "revenue": rev,
+                    "remaining_hours": remaining_h,
+                    "label": m['label'],
+                    "color": m['color'],
+                })
+
     return {
         "actual": actual,
         "ideal": ideal,
         "current_remaining_hours": current_hours,
+        "initial_total_hours": initial_total_hours,
+        "total_target_revenue": total_target_revenue,
+        "milestones": milestones,
         "ideal_finish_date": ideal_finish_date,
         "event_date": event_date,
         "event_name": event_name,

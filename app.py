@@ -1062,6 +1062,26 @@ elif selection == "📊 BI Dashboard":
                 yanchor='top',
             )
 
+        # 売上マイルストーン水平線（銅・銀・金）
+        for ms in burndown.get('milestones', []):
+            fig_bd.add_hline(
+                y=ms['remaining_hours'],
+                line_width=1,
+                line_dash='dot',
+                line_color=ms['color'],
+            )
+            fig_bd.add_annotation(
+                x=0,
+                xref='paper',
+                y=ms['remaining_hours'],
+                text=ms['label'],
+                showarrow=False,
+                font=dict(color=ms['color'], size=10, family='Arial Black'),
+                xanchor='left',
+                yanchor='bottom',
+                bgcolor='rgba(0,0,0,0.5)',
+            )
+
         # レイアウト（ダークテーマ、スマホ対応）
         fig_bd.update_layout(
             template='plotly_dark',
