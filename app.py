@@ -7,6 +7,7 @@ import os
 import shutil
 import io
 import socket
+import math
 import plotly.graph_objects as go
 import qrcode
 
@@ -24,7 +25,7 @@ try:
     importlib.reload(zeus_chat)
     importlib.reload(logic.master_loader)
     importlib.reload(logic.bi_dashboard)
-    from logic.bi_dashboard import calc_countdown, calc_sales_gap, calc_remaining_hours, calc_today_tasks, calc_material_alerts, calc_dev_slot, calc_burnup_data
+    from logic.bi_dashboard import calc_countdown, calc_sales_gap, calc_remaining_hours, calc_today_tasks, calc_material_alerts, calc_dev_slot, calc_burnup_data, calc_burndown_hours
     from logic.zeus_chat import build_system_prompt, get_chat_response
 except ImportError as e:
     st.error(f"Modules not found: {e}")
@@ -1003,6 +1004,118 @@ elif selection == "📊 BI Dashboard":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("📈 履歴データが不足しています。スキャンを蓄積するとチャートが表示されます。")
+
+    st.divider()
+
+    # ==========================
+    # 🔥 バーンダウンチャート（残り総作業時間）
+    # ==========================
+    burndown = calc_burndown_hours(master_data)
+    if burndown and burndown['actual']:
+        st.markdown("#### 🔥 バーンダウンチャート — 理想 vs 現実")
+        st.caption("1日8時間稼働の理想ペースに対し、実際の残り作業時間がどれだけ乖離しているかを突きつけるチャート。")
+
+        fig_bd = go.Figure()
+
+        # 理想線（Ideal Line）
+        ideal_dates = [p['date'] for p in burndown['ideal']]
+        ideal_hours = [p['remaining_hours'] for p in burndown['ideal']]
+        fig_bd.add_trace(go.Scatter(
+            x=ideal_dates,
+            y=ideal_hours,
+            mode='lines',
+            name='理想ペース (8h/日)',
+            line=dict(color='#6bcb77', width=2, dash='dash'),
+            hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>理想</extra>',
+        ))
+
+        # 現実線（Actual Line）
+        actual_dates = [p['date'] for p in burndown['actual']]
+        actual_hours = [p['remaining_hours'] for p in burndown['actual']]
+        fig_bd.add_trace(go.Scatter(
+            x=actual_dates,
+            y=actual_hours,
+            mode='lines+markers',
+            name='実際の残り時間',
+            line=dict(color='#ff6b6b', width=3),
+            marker=dict(size=8, color='#ff6b6b', line=dict(width=1, color='white')),
+            hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>実績</extra>',
+        ))
+
+        # イベント日の縦線
+        event_date = burndown.get('event_date')
+        if event_date:
+            fig_bd.add_vline(
+                x=pd.to_datetime(event_date),
+                line_width=2,
+                line_dash='dot',
+                line_color='#ffd93d',
+                annotation_text=f"📅 {burndown.get('event_name', '')}",
+                annotation_position='top left',
+                annotation_font_color='#ffd93d',
+                annotation_font_size=11,
+            )
+
+        # レイアウト（ダークテーマ、スマホ対応）
+        fig_bd.update_layout(
+            template='plotly_dark',
+            paper_bgcolor='rgba(26,26,46,0.9)',
+            plot_bgcolor='rgba(15,52,96,0.4)',
+            height=400,
+            margin=dict(l=50, r=20, t=30, b=50),
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11),
+            ),
+            xaxis=dict(
+                title='',
+                gridcolor='rgba(255,255,255,0.1)',
+                showgrid=True,
+            ),
+            yaxis=dict(
+                title='残り作業時間 (時間)',
+                gridcolor='rgba(255,255,255,0.1)',
+                showgrid=True,
+                rangemode='tozero',
+            ),
+            hovermode='x unified',
+        )
+
+        st.plotly_chart(fig_bd, use_container_width=True)
+
+        # サマリーカード
+        current_h = burndown['current_remaining_hours']
+        finish_date = burndown['ideal_finish_date']
+        days_needed = math.ceil(current_h / 8) if current_h > 0 else 0
+
+        # イベント日との比較
+        gap_msg = ""
+        if event_date:
+            try:
+                evt_dt = datetime.strptime(event_date, '%Y-%m-%d')
+                finish_dt = datetime.strptime(finish_date, '%Y-%m-%d')
+                diff_days = (evt_dt - finish_dt).days
+                if diff_days >= 0:
+                    gap_msg = f"🟢 イベントまで余裕 {diff_days}日"
+                else:
+                    gap_msg = f"🔴 イベントに {abs(diff_days)}日 間に合わない！"
+            except Exception:
+                pass
+
+        st.markdown(f"""
+        <div class="bi-card bi-ng" style="text-align: center;">
+            <h3>🔥 残り総作業時間</h3>
+            <div class="bi-value">{current_h:.1f} 時間</div>
+            <div class="bi-sub">8h/日 → 完了予定: {finish_date}（{days_needed}日間）</div>
+            <div class="bi-sub" style="margin-top: 0.3rem; font-weight: 700; color: {'#ff8a80' if '🔴' in gap_msg else '#a5d6a7'};">{gap_msg}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("🔥 バーンダウンチャート: 履歴データが不足しています。スキャンを蓄積すると表示されます。")
 
     st.divider()
 

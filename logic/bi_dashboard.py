@@ -672,3 +672,140 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
         "event_date": event_date,
         "event_name": event_name,
     }
+
+
+# =============================================================
+# KPI 8: バーンダウンチャート（残り総作業時間の推移）
+# =============================================================
+
+def calc_burndown_hours(master_data, event_master=None):
+    """
+    残り総作業時間（NC＋手作業）のバーンダウンチャート用データを生成。
+
+    1. master_data から ID→(NC分+手作業分)/個 のマップを構築
+    2. history_summary.json の details 付きエントリから、
+       各時点の「残り総作業時間」を算出
+    3. 理想線: 現在の残り時間から1日8時間ずつ減少する直線
+
+    Returns:
+        dict: {
+            "actual": [{"date": str, "remaining_hours": float}, ...],
+            "ideal":  [{"date": str, "remaining_hours": float}, ...],
+            "current_remaining_hours": float,
+            "ideal_finish_date": str,
+            "event_date": str,
+            "event_name": str,
+        } or None
+    """
+    if not master_data:
+        return None
+
+    # --- 1. ID → 1個あたりの総工程時間（分） マップ ---
+    time_map = {}  # {item_id: total_min_per_unit}
+    for item in master_data:
+        item_id = item.get('id', '')
+        if not item_id:
+            continue
+        nc_min, manual_min, total_min = _calc_item_times(item)
+        time_map[item_id] = total_min
+
+    # --- 2. 履歴から各時点の残り総作業時間を算出 ---
+    history = _load_history_summary()
+    if not history:
+        # 履歴がなくても現在値だけで理想線は描画可能
+        hours_info = calc_remaining_hours(master_data)
+        current_hours = hours_info['total_hours']
+        if current_hours <= 0:
+            return None
+
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        actual = [{"date": today_str, "remaining_hours": current_hours}]
+    else:
+        # details 付きエントリのみ処理
+        daily_hours = {}  # {date_str: remaining_hours}
+        for entry in history:
+            details = entry.get('details')
+            if not details:
+                continue
+
+            ts = entry.get('timestamp') or entry.get('date', '')
+            if not ts:
+                continue
+            try:
+                dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            except (ValueError, TypeError):
+                try:
+                    dt = datetime.strptime(str(ts)[:10], '%Y-%m-%d')
+                except Exception:
+                    continue
+
+            date_str = dt.strftime('%Y-%m-%d')
+
+            # 残り総作業時間 = Σ(max(0, target - count) × 1個あたり時間)
+            total_remaining_min = 0
+            for item_id, item_data in details.items():
+                target = item_data.get('target', 0)
+                count = item_data.get('count', 0)
+                remaining = max(0, target - count)
+                per_unit_min = time_map.get(item_id, 0)
+                total_remaining_min += remaining * per_unit_min
+
+            remaining_hours = round(total_remaining_min / 60, 1)
+            # 同一日は最新値で上書き（後のエントリが最新）
+            daily_hours[date_str] = remaining_hours
+
+        if not daily_hours:
+            # detailsのある履歴がなくても現在値で表示
+            hours_info = calc_remaining_hours(master_data)
+            current_hours = hours_info['total_hours']
+            if current_hours <= 0:
+                return None
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            actual = [{"date": today_str, "remaining_hours": current_hours}]
+        else:
+            sorted_dates = sorted(daily_hours.keys())
+            actual = [{"date": d, "remaining_hours": daily_hours[d]}
+                       for d in sorted_dates]
+
+    # --- 3. 現在の残り総作業時間（最新の actual ポイント） ---
+    current_hours = actual[-1]['remaining_hours']
+    start_date_str = actual[-1]['date']
+
+    # --- 4. 理想線: 1日8時間ずつ減少 ---
+    HOURS_PER_DAY = 8
+    days_to_finish = math.ceil(current_hours / HOURS_PER_DAY) if current_hours > 0 else 0
+
+    try:
+        start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
+    except (ValueError, TypeError):
+        start_dt = datetime.now()
+
+    ideal = []
+    for d in range(days_to_finish + 1):
+        day_dt = start_dt + timedelta(days=d)
+        remaining = max(0, current_hours - HOURS_PER_DAY * d)
+        ideal.append({
+            "date": day_dt.strftime('%Y-%m-%d'),
+            "remaining_hours": round(remaining, 1),
+        })
+
+    finish_dt = start_dt + timedelta(days=days_to_finish)
+    ideal_finish_date = finish_dt.strftime('%Y-%m-%d')
+
+    # --- 5. イベント情報 ---
+    countdown = calc_countdown(event_master=event_master)
+    if countdown:
+        event_date = countdown['event_date']
+        event_name = countdown['event_name']
+    else:
+        event_date = ideal_finish_date
+        event_name = '不明'
+
+    return {
+        "actual": actual,
+        "ideal": ideal,
+        "current_remaining_hours": current_hours,
+        "ideal_finish_date": ideal_finish_date,
+        "event_date": event_date,
+        "event_name": event_name,
+    }

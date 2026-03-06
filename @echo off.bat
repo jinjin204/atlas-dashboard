@@ -7,12 +7,17 @@ echo ==========================================
 echo  Atlas System 統合起動プロセスを開始...
 echo ==========================================
 
-:: 1. Hermes Monitor (CNCjs監視) を別ウィンドウで独立して起動
-echo [1/2] Hermes Monitor (CNCjs監視) を起動しています...
+:: 1. CNCjs本体の起動 (デスクトップのショートカットを直接叩く)
+echo [1/3] CNCjs本体 を起動しています...
+:: ※ ↓ アイコンの名前が違う場合は「cncjs.lnk」の部分を実際の名前に書き換えてください。
+start "" "C:\Users\yjing\AppData\Local\Programs\cncjs-app\CNCjs.exe"
+
+:: 2. Hermes Monitor (CNCjs監視) を別ウィンドウで独立して起動
+echo [2/3] Hermes Monitor (CNCjs監視) を起動しています...
 start "Hermes Monitor" /D "C:\Users\yjing\.gemini\CNCjs 1.9.22監視" cmd /k "color 0a && python monitor.py"
 
-:: 2. Atlas Hub (Streamlit) をこのウィンドウで起動
-echo [2/2] Atlas Hub (生産管理画面) を起動しています...
+:: 3. Atlas Hub (Streamlit) をこのウィンドウで起動
+echo [3/3] Atlas Hub (生産管理画面) を起動しています...
 cd /d "%~dp0"
 
 if exist "venv\Scripts\activate.bat" (
