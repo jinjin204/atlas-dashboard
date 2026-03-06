@@ -1042,18 +1042,24 @@ elif selection == "📊 BI Dashboard":
             hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>実績</extra>',
         ))
 
-        # イベント日の縦線
+        # イベント日の縦線（add_vline と annotation を分離して Plotly _mean バグ回避）
         event_date = burndown.get('event_date')
         if event_date:
             fig_bd.add_vline(
-                x=datetime.strptime(event_date, '%Y-%m-%d'),
+                x=event_date,
                 line_width=2,
                 line_dash='dot',
                 line_color='#ffd93d',
-                annotation_text=f"📅 {burndown.get('event_name', '')}",
-                annotation_position='top left',
-                annotation_font_color='#ffd93d',
-                annotation_font_size=11,
+            )
+            fig_bd.add_annotation(
+                x=event_date,
+                y=1,
+                yref='paper',
+                text=f"📅 {burndown.get('event_name', '')}",
+                showarrow=False,
+                font=dict(color='#ffd93d', size=11),
+                xanchor='left',
+                yanchor='top',
             )
 
         # レイアウト（ダークテーマ、スマホ対応）
