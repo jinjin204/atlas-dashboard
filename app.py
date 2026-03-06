@@ -1046,7 +1046,7 @@ elif selection == "📊 BI Dashboard":
         event_date = burndown.get('event_date')
         if event_date:
             fig_bd.add_vline(
-                x=pd.to_datetime(event_date),
+                x=datetime.strptime(event_date, '%Y-%m-%d'),
                 line_width=2,
                 line_dash='dot',
                 line_color='#ffd93d',
