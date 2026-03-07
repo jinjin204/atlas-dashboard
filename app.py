@@ -1065,6 +1065,32 @@ elif selection == "📊 BI Dashboard":
             hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>理想</extra>',
         ))
 
+        # NC理想線（青の点線）
+        if burndown.get('ideal_nc'):
+            nc_dates = [p['date'] for p in burndown['ideal_nc']]
+            nc_hours = [p['remaining_hours'] for p in burndown['ideal_nc']]
+            fig_bd.add_trace(go.Scatter(
+                x=nc_dates,
+                y=nc_hours,
+                mode='lines',
+                name='NC理想線',
+                line=dict(color='#42a5f5', width=1.5, dash='dot'),
+                hovertemplate='%{x}<br><b>NC: %{y:.1f}h</b><extra>NC理想</extra>',
+            ))
+
+        # 手作業理想線（オレンジの点線）
+        if burndown.get('ideal_manual'):
+            manual_dates = [p['date'] for p in burndown['ideal_manual']]
+            manual_hours = [p['remaining_hours'] for p in burndown['ideal_manual']]
+            fig_bd.add_trace(go.Scatter(
+                x=manual_dates,
+                y=manual_hours,
+                mode='lines',
+                name='手作業理想線',
+                line=dict(color='#ffa726', width=1.5, dash='dot'),
+                hovertemplate='%{x}<br><b>手作業: %{y:.1f}h</b><extra>手作業理想</extra>',
+            ))
+
         # 現実線（Actual Line）
         actual_dates = [p['date'] for p in burndown['actual']]
         actual_hours = [p['remaining_hours'] for p in burndown['actual']]

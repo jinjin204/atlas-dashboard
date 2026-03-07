@@ -828,17 +828,27 @@ def calc_burndown_hours(master_data, event_master=None, calendar_data=None):
         start_dt = datetime.now()
 
     # 理想線 & 日別キャパシティを同時に構築
+    # --- NC/手作業の按分比率を算出 ---
+    current_nc = actual[-1].get('remaining_nc_hours', 0)
+    current_manual = actual[-1].get('remaining_manual_hours', 0)
+    nc_ratio = current_nc / current_hours if current_hours > 0 else 0.5
+    manual_ratio = current_manual / current_hours if current_hours > 0 else 0.5
+
     ideal = []
+    ideal_nc = []
+    ideal_manual = []
     daily_capacity = []
     remaining = current_hours
+    remaining_nc = current_nc
+    remaining_manual = current_manual
     d = 0
     MAX_DAYS = 365  # 無限ループ防止
 
     # 初期ポイント（現在の残り時間）
-    ideal.append({
-        "date": start_dt.strftime('%Y-%m-%d'),
-        "remaining_hours": round(remaining, 1),
-    })
+    start_date_fmt = start_dt.strftime('%Y-%m-%d')
+    ideal.append({"date": start_date_fmt, "remaining_hours": round(remaining, 1)})
+    ideal_nc.append({"date": start_date_fmt, "remaining_hours": round(remaining_nc, 1)})
+    ideal_manual.append({"date": start_date_fmt, "remaining_hours": round(remaining_manual, 1)})
 
     while remaining > 0 and d < MAX_DAYS:
         d += 1
@@ -851,16 +861,19 @@ def calc_burndown_hours(master_data, event_master=None, calendar_data=None):
         else:
             day_capacity = HOURS_PER_DAY_FALLBACK
 
-        daily_capacity.append({
-            "date": date_str,
-            "capacity_hours": round(day_capacity, 1),
-        })
+        daily_capacity.append({"date": date_str, "capacity_hours": round(day_capacity, 1)})
 
+        # 全体の理想線
         remaining = max(0, remaining - day_capacity)
-        ideal.append({
-            "date": date_str,
-            "remaining_hours": round(remaining, 1),
-        })
+        ideal.append({"date": date_str, "remaining_hours": round(remaining, 1)})
+
+        # NC/手作業を比率で按分して減少
+        nc_decrement = day_capacity * nc_ratio
+        manual_decrement = day_capacity * manual_ratio
+        remaining_nc = max(0, remaining_nc - nc_decrement)
+        remaining_manual = max(0, remaining_manual - manual_decrement)
+        ideal_nc.append({"date": date_str, "remaining_hours": round(remaining_nc, 1)})
+        ideal_manual.append({"date": date_str, "remaining_hours": round(remaining_manual, 1)})
 
     days_to_finish = d
     finish_dt = start_dt + timedelta(days=days_to_finish)
@@ -917,6 +930,8 @@ def calc_burndown_hours(master_data, event_master=None, calendar_data=None):
     return {
         "actual": actual,
         "ideal": ideal,
+        "ideal_nc": ideal_nc,
+        "ideal_manual": ideal_manual,
         "daily_capacity": daily_capacity,
         "current_remaining_hours": current_hours,
         "current_nc_hours": actual[-1].get('remaining_nc_hours', 0),
