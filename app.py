@@ -1065,17 +1065,33 @@ elif selection == "📊 BI Dashboard":
             hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>理想</extra>',
         ))
 
-        # 現実線（Actual Line）
+        # 現実線 — NC時間 + 手作業時間の積み上げ面グラフ（Stacked Area）
         actual_dates = [p['date'] for p in burndown['actual']]
-        actual_hours = [p['remaining_hours'] for p in burndown['actual']]
+        actual_nc = [p.get('remaining_nc_hours', 0) for p in burndown['actual']]
+        actual_manual = [p.get('remaining_manual_hours', 0) for p in burndown['actual']]
+
+        # 下層: 残NC時間（青系）
         fig_bd.add_trace(go.Scatter(
             x=actual_dates,
-            y=actual_hours,
-            mode='lines+markers',
-            name='実際の残り時間',
-            line=dict(color='#ff6b6b', width=3),
-            marker=dict(size=8, color='#ff6b6b', line=dict(width=1, color='white')),
-            hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>実績</extra>',
+            y=actual_nc,
+            mode='lines',
+            name='残NC時間',
+            line=dict(color='#42a5f5', width=0.5),
+            stackgroup='actual',
+            fillcolor='rgba(66,165,245,0.4)',
+            hovertemplate='%{x}<br><b>NC: %{y:.1f}h</b><extra>残NC</extra>',
+        ))
+
+        # 上層: 残手作業時間（オレンジ系）
+        fig_bd.add_trace(go.Scatter(
+            x=actual_dates,
+            y=actual_manual,
+            mode='lines',
+            name='残手作業時間',
+            line=dict(color='#ffa726', width=0.5),
+            stackgroup='actual',
+            fillcolor='rgba(255,167,38,0.4)',
+            hovertemplate='%{x}<br><b>手作業: %{y:.1f}h</b><extra>残手作業</extra>',
         ))
 
         # イベント日の縦線（add_vline と annotation を分離して Plotly _mean バグ回避）
@@ -1178,10 +1194,16 @@ elif selection == "📊 BI Dashboard":
                 pass
 
         pace_label = '📅カレンダー連動' if is_calendar_linked else '8h/日'
+        nc_h = burndown.get('current_nc_hours', 0)
+        manual_h = burndown.get('current_manual_hours', 0)
         st.markdown(f"""
         <div class="bi-card bi-ng" style="text-align: center;">
             <h3>🔥 残り総作業時間</h3>
             <div class="bi-value">{current_h:.1f} 時間</div>
+            <div class="bi-sub" style="margin-top: 0.3rem;">
+                <span style="color: #42a5f5;">🔧 NC: {nc_h:.1f}h</span> ／
+                <span style="color: #ffa726;">✋ 手作業: {manual_h:.1f}h</span>
+            </div>
             <div class="bi-sub">{pace_label} → 完了予定: {finish_date}（{days_needed}日間）</div>
             <div class="bi-sub" style="margin-top: 0.3rem; font-weight: 700; color: {'#ff8a80' if '🔴' in gap_msg else '#a5d6a7'};">{gap_msg}</div>
         </div>
