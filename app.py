@@ -1065,33 +1065,17 @@ elif selection == "📊 BI Dashboard":
             hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>理想</extra>',
         ))
 
-        # 現実線 — NC時間 + 手作業時間の積み上げ面グラフ（Stacked Area）
+        # 現実線（Actual Line）
         actual_dates = [p['date'] for p in burndown['actual']]
-        actual_nc = [p.get('remaining_nc_hours', 0) for p in burndown['actual']]
-        actual_manual = [p.get('remaining_manual_hours', 0) for p in burndown['actual']]
-
-        # 下層: 残NC時間（青系）
+        actual_hours = [p['remaining_hours'] for p in burndown['actual']]
         fig_bd.add_trace(go.Scatter(
             x=actual_dates,
-            y=actual_nc,
-            mode='lines',
-            name='残NC時間',
-            line=dict(color='#42a5f5', width=0.5),
-            stackgroup='actual',
-            fillcolor='rgba(66,165,245,0.4)',
-            hovertemplate='%{x}<br><b>NC: %{y:.1f}h</b><extra>残NC</extra>',
-        ))
-
-        # 上層: 残手作業時間（オレンジ系）
-        fig_bd.add_trace(go.Scatter(
-            x=actual_dates,
-            y=actual_manual,
-            mode='lines',
-            name='残手作業時間',
-            line=dict(color='#ffa726', width=0.5),
-            stackgroup='actual',
-            fillcolor='rgba(255,167,38,0.4)',
-            hovertemplate='%{x}<br><b>手作業: %{y:.1f}h</b><extra>残手作業</extra>',
+            y=actual_hours,
+            mode='lines+markers',
+            name='実際の残り時間',
+            line=dict(color='#ff6b6b', width=3),
+            marker=dict(size=8, color='#ff6b6b', line=dict(width=1, color='white')),
+            hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>実績</extra>',
         ))
 
         # イベント日の縦線（add_vline と annotation を分離して Plotly _mean バグ回避）
