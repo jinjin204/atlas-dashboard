@@ -1034,6 +1034,24 @@ elif selection == "📊 BI Dashboard":
                 hovertemplate='%{x}<br><b>%{y:.1f}h/日</b><extra>想定稼働</extra>',
             ))
 
+        # 累積空き時間（Cumulative Capacity）— 第1Y軸
+        if cap_hours:
+            cumulative = []
+            running_total = 0
+            for h in cap_hours:
+                running_total += h
+                cumulative.append(round(running_total, 1))
+            fig_bd.add_trace(go.Scatter(
+                x=cap_dates,
+                y=cumulative,
+                mode='lines',
+                name='累積キャパシティ',
+                line=dict(color='rgba(100,180,255,0.5)', width=2, dash='dot'),
+                fill='tozeroy',
+                fillcolor='rgba(100,180,255,0.05)',
+                hovertemplate='%{x}<br><b>%{y:.1f}h 確保済</b><extra>累積キャパ</extra>',
+            ))
+
         # 理想線（Ideal Line）
         ideal_dates = [p['date'] for p in burndown['ideal']]
         ideal_hours = [p['remaining_hours'] for p in burndown['ideal']]
@@ -1113,7 +1131,7 @@ elif selection == "📊 BI Dashboard":
                 y=1.02,
                 xanchor='center',
                 x=0.5,
-                font=dict(size=11),
+                font=dict(size=11, color='white'),
             ),
             xaxis=dict(
                 title='',
