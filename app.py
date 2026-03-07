@@ -1106,7 +1106,7 @@ elif selection == "📊 BI Dashboard":
             paper_bgcolor='rgba(26,26,46,0.9)',
             plot_bgcolor='rgba(15,52,96,0.4)',
             height=400,
-            margin=dict(l=50, r=20, t=30, b=50),
+            margin=dict(l=50, r=60, t=30, b=50),
             legend=dict(
                 orientation='h',
                 yanchor='bottom',
@@ -1127,13 +1127,12 @@ elif selection == "📊 BI Dashboard":
                 rangemode='tozero',
             ),
             yaxis2=dict(
-                title='日別想定稼働 (h)',
+                title=dict(text='日別想定稼働 (h)', font=dict(color='rgba(100,180,255,0.5)')),
                 overlaying='y',
                 side='right',
                 range=[0, 16],
                 showgrid=False,
                 tickfont=dict(color='rgba(100,180,255,0.5)'),
-                titlefont=dict(color='rgba(100,180,255,0.5)'),
             ),
             hovermode='x unified',
         )
