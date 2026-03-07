@@ -1010,21 +1010,39 @@ elif selection == "📊 BI Dashboard":
     # ==========================
     # 🔥 バーンダウンチャート（残り総作業時間）
     # ==========================
-    burndown = calc_burndown_hours(master_data)
+    burndown = calc_burndown_hours(master_data, calendar_data=calendar_data_cache)
     if burndown and burndown['actual']:
         st.markdown("#### 🔥 バーンダウンチャート — 理想 vs 現実")
-        st.caption("1日8時間稼働の理想ペースに対し、実際の残り作業時間がどれだけ乖離しているかを突きつけるチャート。")
+        is_calendar_linked = burndown.get('capacity_source') == 'calendar'
+        if is_calendar_linked:
+            st.caption("📅 カレンダー連動中 — 日別の空き時間に基づく理想ペースに対し、実際の残り作業時間がどれだけ乖離しているかを突きつけるチャート。")
+        else:
+            st.caption("1日8時間稼働の理想ペースに対し、実際の残り作業時間がどれだけ乖離しているかを突きつけるチャート。（📅カレンダー連動でより正確に）")
 
         fig_bd = go.Figure()
+
+        # 背景: 日別想定稼働時間（棒グラフ, 第2Y軸）
+        cap_dates = [c['date'] for c in burndown.get('daily_capacity', [])]
+        cap_hours = [c['capacity_hours'] for c in burndown.get('daily_capacity', [])]
+        if cap_dates:
+            fig_bd.add_trace(go.Bar(
+                x=cap_dates,
+                y=cap_hours,
+                name='想定稼働時間',
+                marker_color='rgba(100,180,255,0.15)',
+                yaxis='y2',
+                hovertemplate='%{x}<br><b>%{y:.1f}h/日</b><extra>想定稼働</extra>',
+            ))
 
         # 理想線（Ideal Line）
         ideal_dates = [p['date'] for p in burndown['ideal']]
         ideal_hours = [p['remaining_hours'] for p in burndown['ideal']]
+        ideal_label = '理想ペース (📅カレンダー連動)' if is_calendar_linked else '理想ペース (8h/日固定)'
         fig_bd.add_trace(go.Scatter(
             x=ideal_dates,
             y=ideal_hours,
             mode='lines',
-            name='理想ペース (8h/日)',
+            name=ideal_label,
             line=dict(color='#6bcb77', width=2, dash='dash'),
             hovertemplate='%{x}<br><b>%{y:.1f}h</b><extra>理想</extra>',
         ))
@@ -1108,6 +1126,15 @@ elif selection == "📊 BI Dashboard":
                 showgrid=True,
                 rangemode='tozero',
             ),
+            yaxis2=dict(
+                title='日別想定稼働 (h)',
+                overlaying='y',
+                side='right',
+                range=[0, 16],
+                showgrid=False,
+                tickfont=dict(color='rgba(100,180,255,0.5)'),
+                titlefont=dict(color='rgba(100,180,255,0.5)'),
+            ),
             hovermode='x unified',
         )
 
@@ -1116,7 +1143,8 @@ elif selection == "📊 BI Dashboard":
         # サマリーカード
         current_h = burndown['current_remaining_hours']
         finish_date = burndown['ideal_finish_date']
-        days_needed = math.ceil(current_h / 8) if current_h > 0 else 0
+        # 日数は理想線のデータポイント数から算出（カレンダー連動対応）
+        days_needed = len(burndown.get('daily_capacity', [])) or (math.ceil(current_h / 8) if current_h > 0 else 0)
 
         # イベント日との比較
         gap_msg = ""
@@ -1132,11 +1160,12 @@ elif selection == "📊 BI Dashboard":
             except Exception:
                 pass
 
+        pace_label = '📅カレンダー連動' if is_calendar_linked else '8h/日'
         st.markdown(f"""
         <div class="bi-card bi-ng" style="text-align: center;">
             <h3>🔥 残り総作業時間</h3>
             <div class="bi-value">{current_h:.1f} 時間</div>
-            <div class="bi-sub">8h/日 → 完了予定: {finish_date}（{days_needed}日間）</div>
+            <div class="bi-sub">{pace_label} → 完了予定: {finish_date}（{days_needed}日間）</div>
             <div class="bi-sub" style="margin-top: 0.3rem; font-weight: 700; color: {'#ff8a80' if '🔴' in gap_msg else '#a5d6a7'};">{gap_msg}</div>
         </div>
         """, unsafe_allow_html=True)

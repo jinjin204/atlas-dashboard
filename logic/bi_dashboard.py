@@ -678,23 +678,32 @@ def calc_burnup_data(master_data, event_master=None, excel_bytes=None):
 # KPI 8: バーンダウンチャート（残り総作業時間の推移）
 # =============================================================
 
-def calc_burndown_hours(master_data, event_master=None):
+def calc_burndown_hours(master_data, event_master=None, calendar_data=None):
     """
     残り総作業時間（NC＋手作業）のバーンダウンチャート用データを生成。
 
     1. master_data から ID→(NC分+手作業分)/個 のマップを構築
     2. history_summary.json の details 付きエントリから、
        各時点の「残り総作業時間」を算出
-    3. 理想線: 現在の残り時間から1日8時間ずつ減少する直線
+    3. 理想線: カレンダーの日別空き時間に基づいて減少する曲線
+       （カレンダーデータ未連携時は1日8時間のフォールバック）
+
+    Args:
+        master_data: 商品マスタデータ
+        event_master: イベントマスタJSON（オプション）
+        calendar_data: カレンダー統合データ（calendar_agent出力、オプション）
+            calendar_data['daily_schedule'] に日別空き時間が含まれる
 
     Returns:
         dict: {
             "actual": [{"date": str, "remaining_hours": float}, ...],
             "ideal":  [{"date": str, "remaining_hours": float}, ...],
+            "daily_capacity": [{"date": str, "capacity_hours": float}, ...],
             "current_remaining_hours": float,
             "ideal_finish_date": str,
             "event_date": str,
             "event_name": str,
+            "capacity_source": str,  # "calendar" or "fixed"
         } or None
     """
     if not master_data:
@@ -771,24 +780,62 @@ def calc_burndown_hours(master_data, event_master=None):
     current_hours = actual[-1]['remaining_hours']
     start_date_str = actual[-1]['date']
 
-    # --- 4. 理想線: 1日8時間ずつ減少 ---
-    HOURS_PER_DAY = 8
-    days_to_finish = math.ceil(current_hours / HOURS_PER_DAY) if current_hours > 0 else 0
+    # --- 4. 理想線: カレンダー連動 or 固定8h/日 ---
+    HOURS_PER_DAY_FALLBACK = 8
+
+    # カレンダーデータから日別キャパシティマップを構築
+    calendar_capacity_map = {}  # {date_str: total_free_hours}
+    capacity_source = "fixed"
+    if calendar_data and isinstance(calendar_data, dict):
+        daily_schedule = calendar_data.get('daily_schedule', [])
+        if daily_schedule:
+            capacity_source = "calendar"
+            for day_info in daily_schedule:
+                date_key = day_info.get('date', '')
+                if date_key:
+                    calendar_capacity_map[date_key] = day_info.get('total_free_hours', 0)
 
     try:
         start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
     except (ValueError, TypeError):
         start_dt = datetime.now()
 
+    # 理想線 & 日別キャパシティを同時に構築
     ideal = []
-    for d in range(days_to_finish + 1):
+    daily_capacity = []
+    remaining = current_hours
+    d = 0
+    MAX_DAYS = 365  # 無限ループ防止
+
+    # 初期ポイント（現在の残り時間）
+    ideal.append({
+        "date": start_dt.strftime('%Y-%m-%d'),
+        "remaining_hours": round(remaining, 1),
+    })
+
+    while remaining > 0 and d < MAX_DAYS:
+        d += 1
         day_dt = start_dt + timedelta(days=d)
-        remaining = max(0, current_hours - HOURS_PER_DAY * d)
+        date_str = day_dt.strftime('%Y-%m-%d')
+
+        # その日のキャパシティを取得（カレンダー優先、なければフォールバック）
+        if date_str in calendar_capacity_map:
+            day_capacity = calendar_capacity_map[date_str]
+        else:
+            day_capacity = HOURS_PER_DAY_FALLBACK
+
+        daily_capacity.append({
+            "date": date_str,
+            "capacity_hours": round(day_capacity, 1),
+        })
+
+        remaining = max(0, remaining - day_capacity)
         ideal.append({
-            "date": day_dt.strftime('%Y-%m-%d'),
+            "date": date_str,
             "remaining_hours": round(remaining, 1),
         })
 
+    days_to_finish = d
     finish_dt = start_dt + timedelta(days=days_to_finish)
     ideal_finish_date = finish_dt.strftime('%Y-%m-%d')
 
@@ -843,6 +890,7 @@ def calc_burndown_hours(master_data, event_master=None):
     return {
         "actual": actual,
         "ideal": ideal,
+        "daily_capacity": daily_capacity,
         "current_remaining_hours": current_hours,
         "initial_total_hours": initial_total_hours,
         "total_target_revenue": total_target_revenue,
@@ -850,4 +898,5 @@ def calc_burndown_hours(master_data, event_master=None):
         "ideal_finish_date": ideal_finish_date,
         "event_date": event_date,
         "event_name": event_name,
+        "capacity_source": capacity_source,
     }
